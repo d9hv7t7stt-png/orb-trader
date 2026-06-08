@@ -1,1 +1,18 @@
-
+{
+  "name": "Argus Swing Trader",
+  "short_name": "Argus Swing",
+  "description": "Automated ORB options trading dashboard",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#080c10",
+  "theme_color": "#00e5a0",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
