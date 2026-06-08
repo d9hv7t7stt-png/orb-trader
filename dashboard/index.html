@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Argus Swing">
+<meta name="theme-color" content="#00e5a0">
+<link rel="manifest" href="/manifest.json">
+<title>Argus Swing Trader</title>
+<style>
+  :root {
+    --bg: #050608; --surface: #0a0c10; --surface2: #0f1218;
+    --border: rgba(255,255,255,0.06); --border2: rgba(255,255,255,0.12);
+    --green: #00e5a0; --red: #ff4d6a; --amber: #f5a623; --blue: #4da6ff;
+    --green-dim: rgba(0,229,160,0.15); --red-dim: rgba(255,77,106,0.15);
+    --white: #f0f4f8; --dim: rgba(240,244,248,0.4); --mono: 'Courier New', monospace;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--white); font-family:'Arial',sans-serif; font-size:13px; }
+  .header { position:sticky; top:0; z-index:100; background:var(--surface); border-bottom:1px solid var(--border); padding:0 1rem; height:52px; display:flex; align-items:center; justify-content:space-between; }
+  .logo { font-size:16px; font-weight:800; color:var(--green); letter-spacing:0.05em; display:flex; align-items:center; gap:8px; }
+  .logo-badge { width:28px; height:28px; background:var(--green); color:var(--bg); font-size:10px; font-weight:800; display:flex; align-items:center; justify-content:center; }
+  .status { display:flex; align-items:center; gap:8px; }
+  .dot { width:7px; height:7px; border-radius:50%; background:var(--green); animation:pulse 2s infinite; }
+  .dot.off { background:var(--red); animation:none; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .btn { font-family:var(--mono); font-size:11px; font-weight:500; letter-spacing:0.08em; text-transform:uppercase; border:1px solid var(--border2); background:transparent; color:var(--dim); padding:6px 12px; cursor:pointer; transition:all 0.15s; }
+  .btn:hover { border-color:var(--green); color:var(--green); }
+  .btn.green { border-color:var(--green); color:var(--green); background:var(--green-dim); }
+  .main { padding:1rem; max-width:1400px; margin:0 auto; }
+  .nav-tabs { display:flex; border-bottom:1px solid var(--border); margin-bottom:1rem; }
+  .tab { padding:10px 16px; font-size:11px; font-weight:500; letter-spacing:0.1em; text-transform:uppercase; background:transparent; color:var(--dim); border:none; border-bottom:2px solid transparent; cursor:pointer; font-family:var(--mono); transition:all 0.15s; margin-bottom:-1px; }
+  .tab.active { color:var(--green); border-bottom-color:var(--green); }
+  .page { display:none; }
+  .page.active { display:block; }
+  .grid { display:grid; gap:1rem; }
+  .grid-2 { grid-template-columns:1fr 1fr; }
+  .grid-4 { grid-template-columns:repeat(4,1fr); }
+  .panel { background:var(--surface); border:1px solid var(--border); }
+  .panel-header { padding:10px 16px; border-bottom:1px solid var(--border); background:var(--surface2); display:flex; align-items:center; justify-content:space-between; }
+  .panel-title { font-size:10px; font-weight:500; letter-spacing:0.15em; text-transform:uppercase; color:var(--dim); font-family:var(--mono); }
+  .panel-body { padding:16px; }
+  .ticker-card { background:var(--surface); border:1px solid var(--border); padding:14px; }
+  .ticker-name { font-size:20px; font-weight:800; letter-spacing:-0.02em; margin-bottom:4px; }
+  .ticker-sub { font-size:10px; color:var(--dim); letter-spacing:0.1em; text-transform:uppercase; margin-bottom:12px; font-family:var(--mono); }
+  .position-side { display:inline-flex; align-items:center; gap:6px; font-size:10px; font-weight:500; letter-spacing:0.1em; text-transform:uppercase; padding:4px 10px; border:1px solid var(--border2); color:var(--dim); margin-bottom:8px; }
+  .position-side.call { border-color:var(--green); color:var(--green); background:var(--green-dim); }
+  .position-side.put { border-color:var(--red); color:var(--red); background:var(--red-dim); }
+  .pos-detail { font-size:11px; color:var(--dim); font-family:var(--mono); margin-bottom:4px; }
+  .pos-detail span { color:var(--white); }
+  .toggle-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+  .toggle { width:36px; height:20px; background:var(--border2); border-radius:10px; position:relative; cursor:pointer; transition:background 0.2s; border:none; }
+  .toggle.on { background:var(--green); }
+  .toggle::after { content:''; position:absolute; width:16px; height:16px; background:white; border-radius:50%; top:2px; left:2px; transition:left 0.2s; }
+  .toggle.on::after { left:18px; }
+  .contract-input { display:flex; align-items:center; gap:8px; margin-top:8px; }
+  .contract-input input { width:60px; font-family:var(--mono); font-size:14px; background:var(--bg); border:1px solid var(--border2); color:var(--white); padding:5px 8px; outline:none; }
+  .contract-input label { font-size:10px; color:var(--dim); letter-spacing:0.1em; text-transform:uppercase; font-family:var(--mono); }
+  .log-box { background:var(--bg); border:1px solid var(--border); height:260px; overflow-y:auto; font-family:var(--mono); font-size:11px; padding:8px; }
+  .log-entry { display:grid; grid-template-columns:130px 100px 1fr; gap:8px; padding:4px 0; border-bottom:1px solid var(--border); }
+  .log-time { color:var(--dim); }
+  .log-type { font-weight:500; font-size:10px; letter-spacing:0.08em; text-transform:uppercase; }
+  .log-type.ENTRY,.log-type.FLIP { color:var(--green); }
+  .log-type.POSITION_CLOSE,.log-type.STOP_HIT,.log-type.SMA_EXIT { color:var(--red); }
+  .log-type.PROFIT_20,.log-type.PROFIT_100,.log-type.WEEKLY_MOVE { color:var(--amber); }
+  .log-type.STOP_RATCHET { color:var(--amber); }
+  .log-type.AUTH,.log-type.AUTH_ERROR { color:var(--amber); }
+  .log-type.CONTRACTS,.log-type.TICKER { color:var(--dim); }
+  .log-msg { color:var(--dim); }
+  .save-btn { background:var(--green); color:var(--bg); border:none; font-family:var(--mono); font-size:11px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; padding:8px 16px; cursor:pointer; width:100%; margin-top:12px; }
+  .divider { border:none; border-top:1px solid var(--border); margin:12px 0; }
+  .alert-box { background:var(--bg); border:1px solid var(--border2); padding:10px 12px; font-family:var(--mono); font-size:11px; color:var(--amber); line-height:1.6; cursor:pointer; margin-bottom:8px; }
+  .alert-label { font-size:9px; color:var(--dim); letter-spacing:0.12em; text-transform:uppercase; margin-bottom:4px; }
+  .webhook-box { background:var(--bg); border:1px solid var(--border2); padding:10px 12px; font-family:var(--mono); font-size:11px; color:var(--green); word-break:break-all; cursor:pointer; display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .toast { position:fixed; bottom:24px; right:24px; background:var(--surface2); border:1px solid var(--green); color:var(--green); font-size:11px; padding:10px 16px; font-family:var(--mono); z-index:9999; animation:slideIn 0.2s ease; }
+  @keyframes slideIn { from{transform:translateX(20px);opacity:0} to{transform:none;opacity:1} }
+  @media (max-width:768px) {
+    .grid-2,.grid-4 { grid-template-columns:1fr !important; }
+    .main { padding:0.75rem; }
+  }
+</style>
+</head>
+<body>
+<header class="header">
+  <div class="logo"><div class="logo-badge">👁</div>ARGUS SWING</div>
+  <div class="status">
+    <div class="dot" id="auth-dot"></div>
+    <span style="font-size:11px;color:var(--dim);font-family:var(--mono)" id="auth-label">connecting...</span>
+    <button class="btn green" onclick="triggerReauth()">Reconnect</button>
+  </div>
+</header>
+
+<main class="main">
+  <nav class="nav-tabs">
+    <button class="tab active" onclick="showPage('dashboard',this)">Dashboard</button>
+    <button class="tab" onclick="showPage('positions',this)">Positions</button>
+    <button class="tab" onclick="showPage('setup',this)">Setup</button>
+    <button class="tab" onclick="showPage('settings',this)">Settings</button>
+  </nav>
+
+  <!-- DASHBOARD -->
+  <div class="page active" id="page-dashboard">
+    <div class="grid grid-4" style="margin-bottom:1rem" id="ticker-cards"></div>
+    <div class="grid grid-2">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Activity Log</span><button class="btn" onclick="loadState()">Refresh</button></div>
+        <div class="log-box" id="log-box"><div style="color:var(--dim);padding:8px">Loading...</div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Contract Sizes</span></div>
+        <div class="panel-body" id="contract-panel"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- POSITIONS -->
+  <div class="page" id="page-positions">
+    <div class="grid grid-2" id="positions-grid"></div>
+  </div>
+
+  <!-- SETUP -->
+  <div class="page" id="page-setup">
+    <div class="grid grid-2">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Webhook URL</span></div>
+        <div class="panel-body">
+          <div class="alert-label">Your Railway webhook URL</div>
+          <div class="webhook-box" onclick="copyWebhook()" id="webhook-url">
+            <span id="webhook-text">https://your-railway-url.up.railway.app/webhook</span>
+            <span style="color:var(--dim);white-space:nowrap;font-size:10px">click to copy</span>
+          </div>
+          <div class="panel-body" style="padding:12px 0 0">
+            <label style="font-size:10px;color:var(--dim);font-family:var(--mono);letter-spacing:0.1em;text-transform:uppercase">Set Your Railway URL</label>
+            <input type="text" id="railway-url" placeholder="https://your-app.up.railway.app" oninput="updateWebhook()" style="width:100%;margin-top:6px;font-family:var(--mono);font-size:12px;background:var(--bg);border:1px solid var(--border2);color:var(--white);padding:8px 10px;outline:none">
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">TradingView Alert Templates</span></div>
+        <div class="panel-body">
+          <p style="font-size:12px;color:var(--dim);line-height:1.7;margin-bottom:12px">Add the Argus Swing Pine Script indicator to your SPY, SPXW, IWM and QQQ charts on the <strong style="color:var(--white)">30-minute timeframe</strong>. Create one alert per ticker using these conditions:</p>
+          <div class="alert-label">Bar Close — SPY (repeat for each ticker)</div>
+          <div class="alert-box" onclick="copyAlert(this)">{"ticker":"SPY","event":"bar_close","close":{{close}},"sma55":{{plot("55 SMA")}},"option_price":{{plot("Option Price")}}}</div>
+          <div class="alert-label">Weekly Expected Move Hit — SPY</div>
+          <div class="alert-box" onclick="copyAlert(this)">{"ticker":"SPY","event":"weekly_move_hit","option_price":{{plot("Option Price")}}}</div>
+          <p style="font-size:11px;color:var(--dim);margin-top:8px;font-family:var(--mono)">⚠ Replace SPY with SPXW, IWM, or QQQ for each chart. Set trigger to <strong style="color:var(--white)">Once Per Bar Close</strong>.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div class="page" id="page-settings">
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">Ticker Settings</span></div>
+      <div class="panel-body">
+        <p style="font-size:12px;color:var(--dim);margin-bottom:16px">Enable or disable each ticker. Disabled tickers will be ignored even if alerts fire.</p>
+        <div id="ticker-settings"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+const BASE = window.location.origin;
+let state = null;
+
+function showPage(name, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  if (btn) btn.classList.add('active');
+}
+
+function toast(msg, color) {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  if (color === 'red') el.style.borderColor = el.style.color = 'var(--red)';
+  if (color === 'amber') el.style.borderColor = el.style.color = 'var(--amber)';
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2500);
+}
+
+function copyAlert(el) {
+  navigator.clipboard.writeText(el.textContent.trim());
+  toast('Copied!');
+}
+
+function copyWebhook() {
+  navigator.clipboard.writeText(document.getElementById('webhook-text').textContent);
+  toast('Webhook URL copied!');
+}
+
+function updateWebhook() {
+  const val = document.getElementById('railway-url').value.replace(/\/$/, '');
+  document.getElementById('webhook-text').textContent = val ? val + '/webhook' : 'https://your-railway-url.up.railway.app/webhook';
+}
+
+async function triggerReauth() {
+  toast('Reconnecting...', 'amber');
+  try {
+    const res = await fetch(BASE + '/api/reauth', { method: 'POST' });
+    const data = await res.json();
+    toast(data.ok ? 'Connected!' : 'Failed: ' + data.message, data.ok ? '' : 'red');
+    loadState();
+  } catch(e) { toast('Error', 'red'); }
+}
+
+async function saveContracts() {
+  const data = {};
+  ['SPY','SPXW','IWM','QQQ'].forEach(t => {
+    const el = document.getElementById('c-' + t);
+    if (el) data[t] = parseInt(el.value) || 1;
+  });
+  try {
+    const res = await fetch(BASE + '/api/contracts', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    const d = await res.json();
+    if (d.ok) toast('Contract sizes saved!');
+  } catch(e) { toast('Error saving', 'red'); }
+}
+
+async function toggleTicker(ticker, enabled) {
+  await fetch(BASE + '/api/toggle', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ ticker, enabled }) });
+  loadState();
+}
+
+async function loadState() {
+  try {
+    const res = await fetch(BASE + '/api/state');
+    state = await res.json();
+    renderState(state);
+  } catch(e) {}
+}
+
+function renderState(s) {
+  // Auth
+  const dot = document.getElementById('auth-dot');
+  const label = document.getElementById('auth-label');
+  if (s.auth?.logged_in) { dot.className = 'dot'; label.textContent = 'connected'; }
+  else { dot.className = 'dot off'; label.textContent = 'disconnected'; }
+
+  // Ticker cards
+  const tickers = ['SPY','SPXW','IWM','QQQ'];
+  const cards = document.getElementById('ticker-cards');
+  if (cards) {
+    cards.innerHTML = tickers.map(t => {
+      const pos = s.positions?.[t];
+      const enabled = s.tickers?.[t] !== false;
+      const sideClass = pos ? pos.side : '';
+      const sideLabel = pos ? pos.side.toUpperCase() : 'No Position';
+      const gain = pos && pos.entryPrice > 0 ? 'Entry $' + pos.entryPrice.toFixed(2) : '';
+      return `<div class="ticker-card">
+        <div class="ticker-name" style="color:${enabled ? 'var(--white)' : 'var(--dim)'}">${t}</div>
+        <div class="ticker-sub">${t === 'SPXW' ? 'S&P 500 Index' : t === 'SPY' ? 'S&P 500 ETF' : t === 'IWM' ? 'Russell 2000' : 'Nasdaq 100'}</div>
+        <div class="position-side ${sideClass}">${sideLabel}</div>
+        ${pos ? `<div class="pos-detail">${gain}</div><div class="pos-detail">Contracts: <span>${pos.contracts}</span></div><div class="pos-detail">Strike: <span>$${pos.strike || '—'}</span></div>` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  // Log
+  const logBox = document.getElementById('log-box');
+  if (logBox && s.log?.length) {
+    logBox.innerHTML = s.log.map(e => {
+      const t = new Date(e.time).toLocaleTimeString('en-US', { hour12: false });
+      return `<div class="log-entry"><span class="log-time">${t}</span><span class="log-type ${e.type}">${e.type}</span><span class="log-msg">${e.message}</span></div>`;
+    }).join('');
+  }
+
+  // Contract panel
+  const cp = document.getElementById('contract-panel');
+  if (cp) {
+    cp.innerHTML = tickers.map(t => `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <span style="font-family:var(--mono);font-size:13px;font-weight:600">${t}</span>
+        <input type="number" id="c-${t}" min="1" max="100" value="${s.contracts?.[t] || 1}" style="width:60px;font-family:var(--mono);font-size:13px;background:var(--bg);border:1px solid var(--border2);color:var(--white);padding:4px 6px;outline:none;text-align:center">
+      </div>`).join('') +
+      `<button class="save-btn" onclick="saveContracts()">Save Contract Sizes</button>`;
+  }
+
+  // Positions page
+  const pg = document.getElementById('positions-grid');
+  if (pg) {
+    pg.innerHTML = tickers.map(t => {
+      const pos = s.positions?.[t];
+      return `<div class="panel">
+        <div class="panel-header"><span class="panel-title">${t}</span>${pos ? `<span class="position-side ${pos.side}" style="font-size:9px;padding:2px 8px">${pos.side.toUpperCase()}</span>` : ''}</div>
+        <div class="panel-body">
+          ${pos ? `
+            <div class="pos-detail">Side: <span>${pos.side.toUpperCase()}</span></div>
+            <div class="pos-detail">Contracts: <span>${pos.contracts} / ${pos.totalContracts}</span></div>
+            <div class="pos-detail">Entry: <span>$${pos.entryPrice.toFixed(2)}</span></div>
+            <div class="pos-detail">Strike: <span>$${pos.strike || '—'}</span></div>
+            <div class="pos-detail">Expiry: <span>${pos.expiry || '—'}</span></div>
+            <div class="pos-detail">Stop Level: <span>${pos.stopLevel ? '$' + pos.stopLevel.toFixed(2) : 'SMA Cross'}</span></div>
+            <div class="pos-detail">Breakeven: <span>${pos.breakEvenActivated ? '✅ Active' : '—'}</span></div>
+          ` : '<div style="color:var(--dim);font-family:var(--mono);font-size:12px">No active position</div>'}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // Settings
+  const ts = document.getElementById('ticker-settings');
+  if (ts) {
+    ts.innerHTML = tickers.map(t => `
+      <div class="toggle-row" style="margin-bottom:16px">
+        <div>
+          <div style="font-size:14px;font-weight:700">${t}</div>
+          <div style="font-size:11px;color:var(--dim);font-family:var(--mono)">${s.tickers?.[t] !== false ? 'Active — taking signals' : 'Disabled — ignoring signals'}</div>
+        </div>
+        <button class="toggle ${s.tickers?.[t] !== false ? 'on' : ''}" onclick="toggleTicker('${t}', ${s.tickers?.[t] === false})"></button>
+      </div>`).join('');
+  }
+}
+
+loadState();
+setInterval(loadState, 10000);
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>
