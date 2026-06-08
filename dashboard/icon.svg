@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#080c10"/>
+  <rect x="40" y="40" width="432" height="432" rx="80" fill="#0d1318"/>
+  <rect x="40" y="40" width="432" height="6" rx="3" fill="#00e5a0"/>
+  <text x="256" y="200" font-family="Arial" font-weight="800" font-size="80" fill="#00e5a0" text-anchor="middle">ARGUS</text>
+  <text x="256" y="270" font-family="Arial" font-weight="400" font-size="40" fill="#5a7080" text-anchor="middle" letter-spacing="6">SWING</text>
+  <text x="256" y="320" font-family="Arial" font-size="60" text-anchor="middle">👁️</text>
+  <polyline points="80,400 150,360 220,380 290,330 360,290 430,250" stroke="#00e5a0" stroke-width="4" fill="none" opacity="0.4"/>
+</svg>
