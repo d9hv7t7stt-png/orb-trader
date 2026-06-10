@@ -1,9 +1,15 @@
 {
-  "name": "swing-trader",
-  "version": "1.0.0",
-  "description": "Argus Swing Trader — 55 SMA crossover options execution",
+  "name": "orb-trader",
+  "version": "3.0.0",
+  "description": "ORB auto-trader webhook server",
   "main": "server.js",
-  "scripts": { "start": "node server.js" },
-  "dependencies": { "express": "^4.18.2" },
-  "engines": { "node": ">=18.0.0" }
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }
