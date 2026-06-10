@@ -1,170 +1,215 @@
 var stateModule = require("../utils/state");
 var trayd = require("../utils/trayd");
-var discord = require("../utils/discord");
+var fs = require("fs");
+
+function logTradePnL(ticker, side, entryPrice, exitPrice, contracts) {
+  try {
+    var pnlFile = "/tmp/orb-pnl.json";
+    var data = { trades: [] };
+    if (fs.existsSync(pnlFile)) data = JSON.parse(fs.readFileSync(pnlFile, "utf8"));
+    var pnl = (parseFloat(exitPrice) - parseFloat(entryPrice)) * contracts * 100;
+    data.trades.push({ time: new Date().toISOString(), ticker, side, entryPrice, exitPrice, contracts, pnl });
+    var yearAgo = new Date(); yearAgo.setFullYear(yearAgo.getFullYear() - 1);
+    data.trades = data.trades.filter(function(t) { return new Date(t.time) >= yearAgo; });
+    fs.writeFileSync(pnlFile, JSON.stringify(data));
+  } catch(e) { console.log("[PNL_ERROR]", e.message); }
+}
 
 /*
-  TradingView webhook payloads:
+  Pine Script sends these webhook messages:
+  {"ticker":"SPY","event":"orb_set"}           — 9:35 AM first candle closes
+  {"ticker":"SPY","event":"breakout_long"}      — 5-min bar closes above ORB high
+  {"ticker":"SPY","event":"breakout_short"}     — 5-min bar closes below ORB low
+  {"ticker":"SPY","event":"stop_long"}          — 5-min bar closes below ORB mid (long stop)
+  {"ticker":"SPY","event":"stop_short"}         — 5-min bar closes above ORB mid (short stop)
 
-  30-min bar close (fires on every 30-min bar):
-  {"ticker":"SPY","event":"bar_close","close":757.50,"sma55":754.20,"option_price":3.40}
-
-  Weekly expected move hit:
-  {"ticker":"SPY","event":"weekly_move_hit","option_price":5.20}
+  Optional fields (if available):
+  orb_high, orb_low, close, option_price
 */
 
 async function handleAlert(payload) {
+  stateModule.resetDay();
   var ticker = ((payload.ticker) || "").toUpperCase();
-  var event = payload.event;
+  var event  = (payload.event || "").toLowerCase();
 
   if (!ticker || !event) throw new Error("Missing ticker or event");
-  if (!["SPY","SPXW","IWM","QQQ"].includes(ticker)) throw new Error("Unknown ticker: " + ticker);
+  if (ticker !== "SPY" && ticker !== "IWM") throw new Error("Unknown ticker: " + ticker);
 
-  var s = stateModule.getState();
+  var s        = stateModule.getState();
+  var pos      = stateModule.getPosition(ticker);
+  var optPrice = payload.option_price ? parseFloat(payload.option_price) : null;
+  var close    = payload.close ? parseFloat(payload.close) : null;
+  var orbHigh  = payload.orb_high ? parseFloat(payload.orb_high) : null;
+  var orbLow   = payload.orb_low  ? parseFloat(payload.orb_low)  : null;
 
-  // Skip if ticker is disabled
-  if (!s.tickers[ticker]) {
-    return { ok: true, message: ticker + " is disabled" };
+  // ── ORB SET ───────────────────────────────────────────────────────────────
+  if (event === "orb_set") {
+    if (orbHigh && orbLow) {
+      stateModule.setORB(ticker, orbHigh, orbLow);
+      var orb = stateModule.getState().orb[ticker];
+      stateModule.logEvent("ORB_SET", ticker + " High=" + orb.high + " Low=" + orb.low + " Mid=" + orb.mid);
+    } else {
+      // Mark ORB as set even without levels — server will use chart data
+      stateModule.logEvent("ORB_SET", ticker + " ORB candle closed — waiting for breakout");
+    }
+    return { ok: true, message: ticker + " ORB set" };
   }
 
-  // ── Weekly expected move hit → sell 30%
-  if (event === "weekly_move_hit") {
-    var pos = stateModule.getPosition(ticker);
-    if (!pos || pos.stopped || pos.weeklyMoveSold) return { ok: true, message: ticker + " no active position or already sold" };
-    var qty = Math.max(1, Math.floor(pos.contracts * 0.30));
-    stateModule.logEvent("WEEKLY_MOVE", ticker + " weekly move hit, selling 30% (" + qty + "c)");
-    await trayd.closeSwingPosition(ticker, qty, "Weekly expected move — sell 30%");
-    stateModule.updatePosition(ticker, { contracts: pos.contracts - qty, weeklyMoveSold: true });
-    var optPrice = payload.option_price ? parseFloat(payload.option_price) : pos.entryPrice * 1.3;
-    var gain = ((optPrice - pos.entryPrice) / pos.entryPrice) * 100;
-    discord.postProfitTier(ticker, "Weekly Move — Sell 30%", qty, optPrice, gain).catch(function(){});
-    return { ok: true, message: ticker + " 30% sold at weekly move" };
+  // ── STOP LOSS — LONG (close below mid) ───────────────────────────────────
+  if (event === "stop_long") {
+    if (!pos || pos.stopped) return { ok: true, message: ticker + " no active long position" };
+    if (pos.side !== "call") return { ok: true, message: ticker + " position is not a call" };
+    stateModule.logEvent("STOP_LOSS", ticker + " ORB midpoint stop hit — closing long");
+    await trayd.closePartialPosition({ ticker: ticker, contracts: pos.contracts, reason: "ORB midpoint stop" });
+    if (optPrice) logTradePnL(ticker, pos.side, pos.entryPrice, optPrice, pos.contracts);
+    stateModule.closePosition(ticker, "ORB midpoint stop");
+    return { ok: true, message: ticker + " long stopped at ORB midpoint" };
   }
 
-  // ── 30-min bar close — main logic
+  // ── STOP LOSS — SHORT (close above mid) ──────────────────────────────────
+  if (event === "stop_short") {
+    if (!pos || pos.stopped) return { ok: true, message: ticker + " no active short position" };
+    if (pos.side !== "put") return { ok: true, message: ticker + " position is not a put" };
+    stateModule.logEvent("STOP_LOSS", ticker + " ORB midpoint stop hit — closing short");
+    await trayd.closePartialPosition({ ticker: ticker, contracts: pos.contracts, reason: "ORB midpoint stop" });
+    if (optPrice) logTradePnL(ticker, pos.side, pos.entryPrice, optPrice, pos.contracts);
+    stateModule.closePosition(ticker, "ORB midpoint stop");
+    return { ok: true, message: ticker + " short stopped at ORB midpoint" };
+  }
+
+  // ── BREAKOUT LONG — Buy Call ──────────────────────────────────────────────
+  if (event === "breakout_long") {
+    var total = s.contracts[ticker];
+    var half  = Math.ceil(total / 2);
+
+    // If we have a short position open, close it first
+    if (pos && !pos.stopped && pos.side === "put") {
+      stateModule.logEvent("FLIP", ticker + " breakout long — closing put first");
+      await trayd.closePartialPosition({ ticker: ticker, contracts: pos.contracts, reason: "ORB breakout flip to long" });
+      if (optPrice) logTradePnL(ticker, pos.side, pos.entryPrice, optPrice, pos.contracts);
+      stateModule.closePosition(ticker, "flip to long");
+      pos = null;
+    }
+
+    if (!pos || pos.stopped) {
+      stateModule.logEvent("ENTRY", ticker + " call @ breakout_long half=" + half + "/" + total);
+      var order = await trayd.placeOrder({ ticker: ticker, side: "call", contracts: half });
+      stateModule.openHalfPosition(ticker, "call", half, optPrice || close || 0);
+
+      // Cross-entry: IWM breaks before SPY
+      var cross = null;
+      var spyPos = stateModule.getPosition("SPY");
+      if (ticker === "IWM" && (!spyPos || spyPos.stopped) && s.orb.SPY.set) {
+        var spyHalf = Math.ceil(s.contracts.SPY / 2);
+        stateModule.logEvent("CROSS_ENTRY", "IWM breakout long → entering SPY call half=" + spyHalf);
+        cross = await trayd.placeOrder({ ticker: "SPY", side: "call", contracts: spyHalf });
+        stateModule.openHalfPosition("SPY", "call", spyHalf, null);
+      }
+      return { ok: true, entry: order, cross: cross };
+    }
+
+    // Already in a long — check for retest add
+    if (pos.halfIn && !pos.stopped) {
+      var addQty = pos.totalContracts;
+      stateModule.logEvent("RETEST", ticker + " retest add " + addQty + "c");
+      await trayd.placeOrder({ ticker: ticker, side: "call", contracts: addQty });
+      stateModule.addSecondHalf(ticker, addQty, optPrice || close || pos.entryPrice);
+      return { ok: true, message: ticker + " second half added on retest" };
+    }
+
+    return { ok: true, message: ticker + " already in long position" };
+  }
+
+  // ── BREAKOUT SHORT — Buy Put ──────────────────────────────────────────────
+  if (event === "breakout_short") {
+    var total2 = s.contracts[ticker];
+    var half2  = Math.ceil(total2 / 2);
+
+    // If we have a long position open, close it first
+    if (pos && !pos.stopped && pos.side === "call") {
+      stateModule.logEvent("FLIP", ticker + " breakout short — closing call first");
+      await trayd.closePartialPosition({ ticker: ticker, contracts: pos.contracts, reason: "ORB breakout flip to short" });
+      if (optPrice) logTradePnL(ticker, pos.side, pos.entryPrice, optPrice, pos.contracts);
+      stateModule.closePosition(ticker, "flip to short");
+      pos = null;
+    }
+
+    if (!pos || pos.stopped) {
+      stateModule.logEvent("ENTRY", ticker + " put @ breakout_short half=" + half2 + "/" + total2);
+      var order2 = await trayd.placeOrder({ ticker: ticker, side: "put", contracts: half2 });
+      stateModule.openHalfPosition(ticker, "put", half2, optPrice || close || 0);
+
+      // Cross-entry: IWM breaks before SPY
+      var cross2 = null;
+      var spyPos2 = stateModule.getPosition("SPY");
+      if (ticker === "IWM" && (!spyPos2 || spyPos2.stopped) && s.orb.SPY.set) {
+        var spyHalf2 = Math.ceil(s.contracts.SPY / 2);
+        stateModule.logEvent("CROSS_ENTRY", "IWM breakout short → entering SPY put half=" + spyHalf2);
+        cross2 = await trayd.placeOrder({ ticker: "SPY", side: "put", contracts: spyHalf2 });
+        stateModule.openHalfPosition("SPY", "put", spyHalf2, null);
+      }
+      return { ok: true, entry: order2, cross: cross2 };
+    }
+
+    // Already in a short — check for retest add
+    if (pos.halfIn && !pos.stopped) {
+      var addQty2 = pos.totalContracts;
+      stateModule.logEvent("RETEST", ticker + " retest add " + addQty2 + "c");
+      await trayd.placeOrder({ ticker: ticker, side: "put", contracts: addQty2 });
+      stateModule.addSecondHalf(ticker, addQty2, optPrice || close || pos.entryPrice);
+      return { ok: true, message: ticker + " second half added on retest" };
+    }
+
+    return { ok: true, message: ticker + " already in short position" };
+  }
+
+  // ── BAR CLOSE — profit tier checks (optional, if sent) ───────────────────
   if (event === "bar_close") {
-    var close = parseFloat(payload.close);
-    var sma55 = parseFloat(payload.sma55);
-    var optPrice = payload.option_price ? parseFloat(payload.option_price) : null;
-
-    if (!close || !sma55) throw new Error("bar_close requires close and sma55");
-
-    var pos = stateModule.getPosition(ticker);
-
-    // ── SMA signal
-    var aboveSMA = close > sma55;
-    var belowSMA = close < sma55;
-
-    // ── STOP LOSS CHECK (price-based stop after breakeven activated)
-    if (pos && !pos.stopped && pos.stopLevel !== null && optPrice) {
-      var stopHit = optPrice <= pos.stopLevel;
-      if (stopHit) {
-        stateModule.logEvent("STOP_HIT", ticker + " stop hit @ $" + optPrice + " stop=$" + pos.stopLevel);
-        await trayd.closeSwingPosition(ticker, pos.contracts, "Stop loss hit");
-        var pnl = (optPrice - pos.entryPrice) * pos.contracts * 100;
-        var pct = ((optPrice - pos.entryPrice) / pos.entryPrice) * 100;
-        discord.postSwingClose(ticker, optPrice, pnl, pct, "Stop Loss").catch(function(){});
-        stateModule.closePosition(ticker, "stop loss");
-        return { ok: true, message: ticker + " stopped out" };
-      }
+    if (!pos || pos.stopped || !optPrice || pos.entryPrice <= 0) {
+      return { ok: true, message: ticker + " no action on bar_close" };
     }
 
-    // ── SMA-based exit (no breakeven yet — original stop)
-    if (pos && !pos.stopped && pos.stopLevel === null) {
-      var smaExit = (pos.side === "call" && belowSMA) || (pos.side === "put" && aboveSMA);
-      if (smaExit) {
-        stateModule.logEvent("SMA_EXIT", ticker + " SMA exit: close=" + close + " sma=" + sma55);
-        await trayd.closeSwingPosition(ticker, pos.contracts, "SMA crossover exit");
-        var exitPrice = optPrice || pos.entryPrice * 0.8;
-        var exitPnl = (exitPrice - pos.entryPrice) * pos.contracts * 100;
-        var exitPct = ((exitPrice - pos.entryPrice) / pos.entryPrice) * 100;
-        discord.postSwingClose(ticker, exitPrice, exitPnl, exitPct, "SMA Crossover Exit").catch(function(){});
-        stateModule.closePosition(ticker, "SMA exit");
-        pos = null; // fall through to open new position
-      }
+    var gainPct = ((optPrice - pos.entryPrice) / pos.entryPrice) * 100;
+    var tier = pos.lastProfitTier;
+
+    // Activate breakeven stop at +50%
+    if (!pos.breakEvenActivated && gainPct >= 50) {
+      stateModule.setBreakEven(ticker);
+      stateModule.logEvent("BREAKEVEN", ticker + " +50% — stop moved to breakeven");
     }
 
-    // ── PROFIT TIERS (if position open and we have option price)
-    if (pos && !pos.stopped && optPrice && pos.entryPrice > 0) {
-      var gainPct = ((optPrice - pos.entryPrice) / pos.entryPrice) * 100;
-
-      // Stop ratchet: +50% → breakeven, every +50% after → stop moves up 40%
-      if (gainPct >= 50) {
-        var stopMultiplier = Math.floor(gainPct / 50);
-        var newStop;
-        if (stopMultiplier === 1) {
-          newStop = pos.entryPrice; // breakeven
-        } else {
-          newStop = pos.entryPrice * (1 + (stopMultiplier - 1) * 0.40);
-        }
-        if (!pos.stopLevel || newStop > pos.stopLevel) {
-          stateModule.updatePosition(ticker, { stopLevel: newStop, breakEvenActivated: true });
-          stateModule.logEvent("STOP_RATCHET", ticker + " stop moved to $" + newStop.toFixed(2) + " (+" + gainPct.toFixed(0) + "%)");
-          discord.postBreakeven(ticker, newStop).catch(function(){});
-        }
-      }
-
-      // Every +20% → sell 10%
-      var twentyIncrements = Math.floor(gainPct / 20);
-      if (twentyIncrements > pos.lastProfitTier && gainPct < 100) {
-        var sell10 = Math.max(1, Math.floor(pos.contracts * 0.10));
-        stateModule.logEvent("PROFIT_20", ticker + " +" + gainPct.toFixed(1) + "% selling 10% (" + sell10 + "c)");
-        await trayd.closeSwingPosition(ticker, sell10, "+20% sell 10%");
-        stateModule.updatePosition(ticker, { contracts: pos.contracts - sell10, lastProfitTier: twentyIncrements });
-        discord.postProfitTier(ticker, "+20% Tier — Sell 10%", sell10, optPrice, gainPct).catch(function(){});
-      }
-
-      // +100% → sell 50%
-      if (gainPct >= 100 && !pos.hundredPctSold) {
-        var sell50 = Math.max(1, Math.floor(pos.contracts * 0.50));
-        stateModule.logEvent("PROFIT_100", ticker + " +100% selling 50% (" + sell50 + "c)");
-        await trayd.closeSwingPosition(ticker, sell50, "+100% sell 50%");
-        stateModule.updatePosition(ticker, { contracts: pos.contracts - sell50, hundredPctSold: true });
-        discord.postProfitTier(ticker, "+100% — Sell 50%", sell50, optPrice, gainPct).catch(function(){});
-      }
+    // Every +20% → sell 10%
+    var increments = Math.floor(gainPct / 20);
+    if (increments > tier && gainPct < 100 && tier < 100) {
+      var sell10 = Math.max(1, Math.floor(pos.contracts * 0.10));
+      stateModule.logEvent("PROFIT_TIER_1", ticker + " +" + gainPct.toFixed(1) + "% selling 10% (" + sell10 + "c)");
+      await trayd.closePartialPosition({ ticker: ticker, contracts: sell10, reason: "+20% tier sell 10%" });
+      stateModule.markProfitTier(ticker, increments);
+      return { ok: true, message: ticker + " +20% profit tier" };
     }
 
-    // ── ENTRY / FLIP LOGIC
-    var newSignal = aboveSMA ? "call" : belowSMA ? "put" : null;
-
-    if (newSignal && (!pos || pos.stopped)) {
-      // Fresh entry
-      var contracts = s.contracts[ticker];
-      var expiry = trayd.getSwingExpiry();
-      var strike = trayd.getOTMStrike(ticker, close, newSignal);
-
-      stateModule.logEvent("ENTRY", ticker + " " + newSignal + " @ " + close + " sma=" + sma55 + " strike=" + strike + " exp=" + expiry);
-      var order = await trayd.placeSwingOrder(ticker, newSignal, contracts);
-      stateModule.openPosition(ticker, newSignal, contracts, optPrice || close, strike, expiry);
-
-      if (optPrice) discord.postSwingEntry(ticker, newSignal, strike, expiry, optPrice, contracts).catch(function(){});
-      return { ok: true, entry: order };
+    // +100% → sell 50%
+    if (gainPct >= 100 && tier < 100) {
+      var sell50 = Math.max(1, Math.floor(pos.contracts * 0.50));
+      stateModule.logEvent("PROFIT_TIER_2", ticker + " +100% selling 50% (" + sell50 + "c)");
+      await trayd.closePartialPosition({ ticker: ticker, contracts: sell50, reason: "+100% sell 50%" });
+      stateModule.markProfitTier(ticker, 100);
+      return { ok: true, message: ticker + " +100% profit tier" };
     }
 
-    if (newSignal && pos && !pos.stopped && newSignal !== pos.side) {
-      // Flip — close current, open opposite
-      var oldSide = pos.side;
-      stateModule.logEvent("FLIP", ticker + " flipping " + oldSide + " → " + newSignal);
+    return { ok: true, message: ticker + " bar_close processed" };
+  }
 
-      await trayd.closeSwingPosition(ticker, pos.contracts, "SMA flip — close " + oldSide);
-      var flipPrice = optPrice || pos.entryPrice;
-      var flipPnl = (flipPrice - pos.entryPrice) * pos.contracts * 100;
-      var flipPct = ((flipPrice - pos.entryPrice) / pos.entryPrice) * 100;
-      discord.postSwingClose(ticker, flipPrice, flipPnl, flipPct, "SMA Flip").catch(function(){});
-      stateModule.closePosition(ticker, "SMA flip");
-
-      // Open new side
-      var flipContracts = s.contracts[ticker];
-      var flipExpiry = trayd.getSwingExpiry();
-      var flipStrike = trayd.getOTMStrike(ticker, close, newSignal);
-
-      var flipOrder = await trayd.placeSwingOrder(ticker, newSignal, flipContracts);
-      stateModule.openPosition(ticker, newSignal, flipContracts, optPrice || close, flipStrike, flipExpiry);
-
-      if (optPrice) discord.postSwingFlip(ticker, oldSide, newSignal, flipStrike, flipExpiry, optPrice, flipContracts).catch(function(){});
-      return { ok: true, flip: flipOrder };
-    }
-
-    return { ok: true, message: ticker + " no action this bar" };
+  // ── EXPECTED MOVE HIT ─────────────────────────────────────────────────────
+  if (event === "expected_move_hit") {
+    if (!pos || pos.stopped) return { ok: true, message: ticker + " no active position" };
+    var timeframe = payload.timeframe || "daily";
+    var qty90 = Math.floor(pos.contracts * 0.9);
+    if (qty90 < 1) return { ok: true, message: ticker + " not enough contracts" };
+    stateModule.logEvent("PROFIT_TIER_3", ticker + " " + timeframe + " expected move — selling 90% (" + qty90 + "c)");
+    await trayd.closePartialPosition({ ticker: ticker, contracts: qty90, reason: timeframe + " expected move 90% exit" });
+    stateModule.markProfitTier(ticker, 300);
+    return { ok: true, message: ticker + " 90% exit on expected move" };
   }
 
   throw new Error("Unknown event: " + event);
