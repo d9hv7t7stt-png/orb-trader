@@ -58,7 +58,7 @@ function savePersisted(state) {
     });
     fs.writeFileSync(PERSIST_FILE, JSON.stringify({
       pools: poolsOut,
-      log: (state.log || []).slice(0, 100)
+      log: (state.log || []).slice(0, 300)
     }));
   } catch (e) {
     console.error("[State] Save error:", e.message);
@@ -86,7 +86,7 @@ function mergeState(saved) {
     };
   }
   if (saved && Array.isArray(saved.log) && saved.log.length) {
-    state.log = saved.log.slice(0, 100);
+    state.log = saved.log.slice(0, 300);
   }
   return state;
 }

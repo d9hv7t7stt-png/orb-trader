@@ -163,7 +163,7 @@ async function postStockEntry(poolId, ticker, maLabel, price, shares, total, pro
       { name: "Shares", value: String(shares), inline: true },
       { name: "Price", value: "$" + price.toFixed(2), inline: true },
       { name: "Cost", value: formatMoney(total), inline: true },
-      { name: "Risk Size", value: formatMoney(riskUsd) + " (2% equity)", inline: true },
+      { name: "Risk Size", value: formatMoney(riskUsd) + " (" + (parseFloat(process.env.RISK_PCT || "2")) + "% equity)", inline: true },
       { name: "MA Proximity", value: proximityPct + "%", inline: true }
     ],
     footer: { text: accountFooter(poolId) },
