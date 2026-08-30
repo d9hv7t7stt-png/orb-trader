@@ -63,6 +63,20 @@ async function main() {
     assert.strictEqual(tickers.isAlertOnly("SPY"), false);
   });
 
+  await test("main briefing watchlist is indexes, Mag7, metals, then sectors", function () {
+    var list = tickers.getMainBriefingTickers();
+    assert.strictEqual(list[0], "SPXW");
+    assert.strictEqual(tickers.getDisplayTicker("SPXW"), "SPX");
+    assert.ok(list.indexOf("NVDA") !== -1);
+    assert.ok(list.indexOf("XLC") !== -1);
+    assert.ok(list.indexOf("DRAM") === -1);
+    assert.ok(list.indexOf("MU") === -1);
+    assert.ok(list.indexOf("SMH") === -1);
+    assert.ok(list.indexOf("SPXW") < list.indexOf("SPY"));
+    assert.ok(list.indexOf("SLV") < list.indexOf("XLB"));
+    assert.ok(list.indexOf("XLB") < list.indexOf("XLY"));
+  });
+
   console.log("\nmarketHours");
   var marketHours = require("../utils/marketHours");
 
@@ -271,29 +285,42 @@ async function main() {
     assert.ok(openField.value.indexOf("No open positions") !== -1);
   });
 
-  await test("Sunday Near MA uses 21/55 day only, ordered, SPX label", function () {
+  await test("Sunday Main lists the full watchlist with prior close and 21/55", function () {
     var stateMod = require("../utils/state");
     stateMod.setScanResults("main", {
-      DRAM: { ticker: "DRAM", levels: [{ key: "d_ema21", label: "21-Day EMA", near: true, value: 50 }] },
-      XLY: { ticker: "XLY", levels: [{ key: "d_ema21", label: "21-Day EMA", near: true, value: 117 }, { key: "w_ema21", label: "21-Week EMA", near: true, value: 116 }] },
-      XLB: { ticker: "XLB", levels: [{ key: "d_ema21", label: "21-Day EMA", near: true, value: 53 }] },
-      SPY: { ticker: "SPY", levels: [{ key: "d_ema21", label: "21-Day EMA", near: true, value: 765 }] },
-      SPXW: { ticker: "SPXW", levels: [{ key: "d_ema21", label: "21-Day EMA", near: true, value: 7669 }, { key: "d_sma200", label: "200-Day SMA", near: true, value: 7000 }] },
-      NVDA: { ticker: "NVDA", levels: [{ key: "d_sma55", label: "55-Day SMA", near: true, value: 210 }] }
+      DRAM: { ticker: "DRAM", stopPrice: 12, price: 12, levels: [{ key: "d_ema21", label: "21-Day EMA", near: true, value: 50 }] },
+      XLY: { ticker: "XLY", stopPrice: 118.5, price: 118.5, levels: [{ key: "d_ema21", label: "21-Day EMA", near: true, value: 117 }, { key: "w_ema21", label: "21-Week EMA", near: true, value: 116 }, { key: "d_sma55", label: "55-Day SMA", value: 116.27 }] },
+      XLB: { ticker: "XLB", stopPrice: 53.1, price: 53.1, levels: [{ key: "d_ema21", label: "21-Day EMA", near: true, value: 53 }, { key: "d_sma55", label: "55-Day SMA", value: 52 }] },
+      SPY: { ticker: "SPY", stopPrice: 766.2, price: 766.2, levels: [{ key: "d_ema21", label: "21-Day EMA", near: true, value: 765 }, { key: "d_sma55", label: "55-Day SMA", value: 750 }] },
+      SPXW: { ticker: "SPXW", stopPrice: 7680, price: 7680, levels: [{ key: "d_ema21", label: "21-Day EMA", near: true, value: 7669 }, { key: "d_sma200", label: "200-Day SMA", near: true, value: 7000 }, { key: "d_sma55", label: "55-Day SMA", value: 7400 }] },
+      NVDA: { ticker: "NVDA", stopPrice: 217.55, price: 217.55, levels: [{ key: "d_sma55", label: "55-Day SMA", near: true, value: 210 }, { key: "d_ema21", label: "21-Day EMA", value: 215.49 }] }
     });
-    var near = discord.buildSundayPremarketEmbeds({}).find(function (e) { return e.title.indexOf("Main") !== -1; })
-      .fields.find(function (f) { return f.name === "Near MA"; }).value;
-    assert.ok(near.indexOf("SPX") !== -1);
-    assert.ok(near.indexOf("SPXW") === -1);
-    assert.ok(near.indexOf("21-Week") === -1);
-    assert.ok(near.indexOf("200-Day") === -1);
-    assert.ok(near.indexOf("DRAM") === -1);
-    var spxAt = near.indexOf("SPX");
-    var spyAt = near.indexOf("SPY");
-    var nvdaAt = near.indexOf("NVDA");
-    var xlbAt = near.indexOf("XLB");
-    var xlyAt = near.indexOf("XLY");
+    var main = discord.buildSundayPremarketEmbeds({}).find(function (e) { return e.title.indexOf("Main") !== -1; });
+    assert.ok(!main.fields.some(function (f) { return f.name === "Near MA"; }));
+    var watch = main.fields.filter(function (f) { return f.name.indexOf("Watchlist") === 0; })
+      .map(function (f) { return f.value; }).join("\n");
+    tickers.getMainBriefingTickers().forEach(function (t) {
+      var label = tickers.getDisplayTicker(t);
+      assert.ok(watch.indexOf(label) !== -1, "missing " + label);
+    });
+    assert.ok(watch.indexOf("SPX") !== -1);
+    assert.ok(watch.indexOf("SPXW") === -1);
+    assert.ok(watch.indexOf("21-Week") === -1);
+    assert.ok(watch.indexOf("200-Day") === -1);
+    assert.ok(watch.indexOf("DRAM") === -1);
+    assert.ok(watch.indexOf("$7,680.00") !== -1, "prior close");
+    assert.ok(watch.indexOf("21 $7,669.00") !== -1);
+    assert.ok(watch.indexOf("55 $7,400.00") !== -1);
+    var spxAt = watch.indexOf("SPX");
+    var spyAt = watch.indexOf("SPY");
+    var nvdaAt = watch.indexOf("NVDA");
+    var xlbAt = watch.indexOf("XLB");
+    var xlyAt = watch.indexOf("XLY");
     assert.ok(spxAt < spyAt && spyAt < nvdaAt && nvdaAt < xlbAt && xlbAt < xlyAt);
+    assert.ok(watch.indexOf("AAPL") !== -1);
+    assert.ok(watch.indexOf("XLU") !== -1);
+    var aaplLine = watch.split("\n").find(function (l) { return l.indexOf("AAPL") === 0; });
+    assert.ok(aaplLine && aaplLine.indexOf("21") !== -1 && aaplLine.indexOf("55") !== -1);
   });
 
   await test("Space DC Sunday lists every name with prior close, 21/55, shares, and IRDM sold", function () {

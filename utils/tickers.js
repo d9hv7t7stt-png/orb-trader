@@ -75,6 +75,16 @@ function isBriefingTicker(ticker) {
   return MAIN_BRIEFING_ORDER.indexOf(ticker) !== -1 || isAlertOnly(ticker);
 }
 
+function getMainBriefingTickers() {
+  var seen = {};
+  var list = MAIN_BRIEFING_ORDER.concat(SECTOR_SPDR.slice().sort());
+  return list.filter(function (t) {
+    if (seen[t]) return false;
+    seen[t] = true;
+    return true;
+  });
+}
+
 function isBriefingMa(level) {
   var key = level && (level.key || level.maKey);
   return BRIEFING_DAILY_MA_KEYS.indexOf(key) !== -1;
@@ -123,6 +133,7 @@ module.exports = {
   briefingRank: briefingRank,
   isBriefingMa: isBriefingMa,
   isBriefingTicker: isBriefingTicker,
+  getMainBriefingTickers: getMainBriefingTickers,
   MAG7: MAG7,
   BRIEFING_DAILY_MA_KEYS: BRIEFING_DAILY_MA_KEYS,
   MAIN_BRIEFING_ORDER: MAIN_BRIEFING_ORDER,

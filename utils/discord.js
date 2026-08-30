@@ -94,7 +94,7 @@ function formatPct(n) {
 }
 
 function formatMaPrice(v) {
-  return v != null ? "$" + Number(v).toFixed(2) : "—";
+  return v != null ? formatMoney(v) : "—";
 }
 
 function levelValue(scanRow, key) {
@@ -169,6 +169,22 @@ function buildSpaceDcWatchlistFields(livePrices, scanResults) {
   });
   fields.push({ name: "Cash & sold", value: notes.join("\n"), inline: false });
   return fields;
+}
+
+function buildMainWatchlistFields(scanResults) {
+  var tickersMod = require("./tickers");
+  scanResults = scanResults || {};
+  var lines = tickersMod.getMainBriefingTickers().map(function (ticker) {
+    var row = scanResults[ticker] || {};
+    var close = priorClose(row, null);
+    var ema21 = levelValue(row, "d_ema21");
+    var sma55 = levelValue(row, "d_sma55");
+    return tickersMod.getDisplayTicker(ticker).padEnd(4)
+      + "  " + formatMaPrice(close)
+      + "  21 " + formatMaPrice(ema21)
+      + "  55 " + formatMaPrice(sma55);
+  });
+  return fieldsFromLines("Watchlist", lines);
 }
 
 function livePricesFromState() {
@@ -348,26 +364,6 @@ async function postStockDailySummary(livePricesByPool) {
   }] }, "daily");
 }
 
-function groupNearHits(hits, ordered) {
-  var map = {};
-  hits.forEach(function (h) {
-    if (!map[h.ticker]) map[h.ticker] = [];
-    map[h.ticker].push(h);
-  });
-  var tickersMod = require("./tickers");
-  var keys = Object.keys(map);
-  if (ordered) {
-    keys.sort(function (a, b) {
-      return tickersMod.briefingRank(a) - tickersMod.briefingRank(b);
-    });
-  } else {
-    keys.sort();
-  }
-  return keys.map(function (ticker) {
-    return { ticker: ticker, levels: map[ticker] };
-  });
-}
-
 function buildSundayPremarketEmbeds(livePricesByPool) {
   var paperMod = require("./paper");
   var stateMod = require("./state");
@@ -418,28 +414,14 @@ function buildSundayPremarketEmbeds(livePricesByPool) {
       return "• " + pos.ticker + " (" + pos.maLabel + ") " + pos.shares + "sh · " + formatMoney(u) + " (" + formatPct(pct) + ")";
     }).join("\n") || "No open positions — waiting for MA proximity";
 
-    var tickersMod = require("./tickers");
-    var nearHits = [];
-    Object.values(s.scanResults || {}).forEach(function (r) {
-      if (!r || !r.levels) return;
-      r.levels.filter(function (l) { return l.near && tickersMod.isBriefingMa(l); }).forEach(function (l) {
-        if (!tickersMod.isBriefingTicker(r.ticker)) return;
-        nearHits.push({ ticker: r.ticker, key: l.key, level: l.label, ma: l.value });
-      });
-    });
-    var nearLines = groupNearHits(nearHits, true).map(function (g) {
-      var chips = g.levels.map(function (l) {
-        return l.level + " " + (l.ma != null ? formatMoney(l.ma) : "—");
-      }).join(", ");
-      return "• " + tickersMod.getDisplayTicker(g.ticker) + " — " + chips;
-    }).join("\n") || "Nothing within 1% of the 21-Day EMA or 55-Day SMA";
-
     fields.push(
       { name: "Open", value: String(knownPositions.length), inline: true },
       { name: "Next Entry", value: formatMoney(paperMod.getPositionSizeUSD(pool.id, livePrices)), inline: true },
-      { name: "Open Positions", value: openLines.slice(0, 1000), inline: false },
-      { name: "Near MA", value: nearLines.slice(0, 1000), inline: false }
+      { name: "Open Positions", value: openLines.slice(0, 1000), inline: false }
     );
+    buildMainWatchlistFields(s.scanResults || {}).forEach(function (f) {
+      fields.push(f);
+    });
 
     return {
       color: 0x4da6ff,
