@@ -1,7 +1,7 @@
 {
-  "name": "orb-trader",
-  "version": "3.0.0",
-  "description": "ORB auto-trader webhook server",
+  "name": "argus-swing-trader",
+  "version": "3.1.0",
+  "description": "Argus Swing Trader — 55 SMA crossover options execution",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

@@ -1,4 +1,4 @@
-const CACHE = 'orb-trader-v1';
+const CACHE = 'argus-swing-v1';
 const ASSETS = ['/', '/manifest.json', '/icon.svg'];
 
 self.addEventListener('install', function(e) {
