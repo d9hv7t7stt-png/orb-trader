@@ -180,5 +180,6 @@ module.exports = {
   fetchAllIndicators: fetchAllIndicators,
   isNearMA: isNearMA,
   proximityPct: proximityPct,
-  clearCache: clearCache
+  clearCache: clearCache,
+  yahooChart: yahooChart
 };

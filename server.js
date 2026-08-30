@@ -177,6 +177,9 @@ app.post("/api/reset-paper", requireAuth, (req, res) => {
     var poolId = parsePoolId(req.body && req.body.pool);
     if (!poolId) return res.status(400).json({ error: "Invalid pool" });
     paper.resetPortfolio(poolId);
+    if (poolId === "space_dc") {
+      require("./utils/spaceDcBook").seedSpaceDcBook(true);
+    }
     var pool = pools.getPool(poolId);
     state.logEvent("RESET", "Paper portfolio reset to $" + pool.startingBalance.toLocaleString("en-US"), poolId);
     res.json({ ok: true, pool: poolId });
@@ -201,6 +204,11 @@ app.listen(PORT, () => {
   if (flattened) console.log("[Scanner] Flattened " + flattened + " alert-only sector position(s) on startup");
   var dropped = paper.dropUnknownPositionsAllPools();
   if (dropped) console.log("[Paper] Dropped " + dropped + " unknown ticker position(s) on startup");
+  var spaceDcBook = require("./utils/spaceDcBook");
+  var seeded = spaceDcBook.seedSpaceDcBook();
+  if (seeded && seeded.seededFromRebalance) {
+    console.log("[Paper] Space DC book: " + Object.keys(seeded.positions).length + " names from 6/30/26 rebalance, cash $" + seeded.cash.toFixed(2));
+  }
   scanner.scheduleScanner();
   discord.scheduleDailySummary();
   discord.scheduleSundayPremarket();

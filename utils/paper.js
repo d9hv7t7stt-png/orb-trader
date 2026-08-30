@@ -299,6 +299,14 @@ function dropUnknownPositionsAllPools() {
   return dropped;
 }
 
+function replacePortfolio(poolId, mutator) {
+  var portfolio = getPortfolio(poolId);
+  var next = mutator(portfolio) || portfolio;
+  cache[poolId] = next;
+  savePortfolio(poolId, next);
+  return next;
+}
+
 function resetPortfolio(poolId) {
   cache[poolId] = defaultPortfolio(poolId);
   savePortfolio(poolId, cache[poolId]);
@@ -352,5 +360,6 @@ module.exports = {
   dropUnknownPositions: dropUnknownPositions,
   dropUnknownPositionsAllPools: dropUnknownPositionsAllPools,
   getAllPoolSummaries: getAllPoolSummaries,
-  positionKey: positionKey
+  positionKey: positionKey,
+  replacePortfolio: replacePortfolio
 };
