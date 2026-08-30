@@ -53,12 +53,14 @@ async function sendDiscord(payload, roleType) {
 //   DISCORD_ROLE_STOPS=1234567891     → @Risk role on stop-loss exits
 //   DISCORD_ROLE_PROXIMITY=1234567892 → @Alerts role on MA proximity (optional, can be noisy)
 //   DISCORD_ROLE_DAILY=1234567893     → @Daily role on after-the-bell P&L summary
+//   DISCORD_ROLE_TAKEPROFIT=1234567894 → @Profits role on take-profit partial/full exits
 function rolePing(type) {
   var map = {
     entry: process.env.DISCORD_ROLE_ENTRIES,
     stop: process.env.DISCORD_ROLE_STOPS,
     proximity: process.env.DISCORD_ROLE_PROXIMITY,
-    daily: process.env.DISCORD_ROLE_DAILY
+    daily: process.env.DISCORD_ROLE_DAILY,
+    profit: process.env.DISCORD_ROLE_TAKEPROFIT
   };
   var id = map[type] || process.env.DISCORD_ROLE_ALERTS;
   if (!id) return null;
@@ -432,6 +434,22 @@ async function postStockExit(ticker, maLabel, exitPrice, pnl, pct, reason, roleT
   }] }, roleType || "stop");
 }
 
+async function postTakeProfit(ticker, maLabel, tierLabel, exitPrice, sharesSold, pnl, pct, remaining) {
+  await sendDiscord({ embeds: [{
+    color: 0xf5a623,
+    title: "💰 TAKE PROFIT — " + ticker,
+    fields: [
+      { name: "Tier", value: tierLabel, inline: true },
+      { name: "Sold", value: sharesSold + "sh @ $" + exitPrice.toFixed(2), inline: true },
+      { name: "P&L", value: formatMoney(pnl) + " (" + formatPct(pct) + ")", inline: true },
+      { name: "Entry MA", value: maLabel, inline: true },
+      { name: "Remaining", value: remaining != null ? remaining + " shares" : "Closed", inline: true }
+    ],
+    footer: { text: accountFooter() },
+    timestamp: new Date().toISOString()
+  }] }, "profit");
+}
+
 async function postStockDailySummary(livePrices) {
   var paperMod = require("./paper");
   var p = paperMod.getPortfolio();
@@ -470,7 +488,7 @@ async function postStockDailySummary(livePrices) {
       { name: "Open Positions", value: openLines, inline: false },
       { name: "Next Entry Size", value: formatMoney(paperMod.getPositionSizeUSD(livePrices || {})) + " (" + riskPct + "% of equity)", inline: false }
     ],
-    footer: { text: "Argus Paper Stock · $50,000 start · Stop: close below 55-Day SMA" },
+    footer: { text: "Argus Paper Stock · $50,000 start · Stop: 55 SMA · TP: +10/+20/+30%" },
     timestamp: new Date().toISOString()
   }] }, "daily");
 }
@@ -491,5 +509,6 @@ module.exports = {
   postProximityAlert,
   postStockEntry,
   postStockExit,
+  postTakeProfit,
   postStockDailySummary
 };

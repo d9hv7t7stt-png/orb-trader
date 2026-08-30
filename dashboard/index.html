@@ -54,6 +54,7 @@ body{background:var(--bg);color:var(--white);font-family:-apple-system,BlinkMacS
 .log-type{font-size:9px;font-weight:600;text-transform:uppercase}
 .log-type.STOCK_BUY,.log-type.MA_NEAR{color:var(--blue)}
 .log-type.STOP_LOSS{color:var(--red)}
+.log-type.TAKE_PROFIT{color:var(--amber)}
 .log-type.SCAN,.log-type.SCAN_DONE{color:var(--green)}
 .toggle{width:40px;height:24px;background:var(--surface2);border-radius:12px;border:1px solid var(--border);position:relative;cursor:pointer}
 .toggle.on{background:var(--green);border-color:var(--green)}
@@ -207,8 +208,8 @@ function render() {
 
   document.getElementById('pos-grid').innerHTML = (data.positions||[]).length
     ? data.positions.map(p => `<div class="pos-card"><h4>${p.ticker} · ${p.maLabel}</h4>
-      <div class="pos-meta">Shares <span>${p.shares}</span> · Entry <span>${fmt(p.entryPrice)}</span> · Now <span>${fmt(p.currentPrice)}</span><br>
-      P&L <span style="color:${p.pnl>=0?'var(--green)':'var(--red)'}">${fmt(p.pnl,0)} (${fmtPct(p.pct)})</span></div></div>`).join('')
+      <div class="pos-meta">Shares <span>${p.shares}</span>${p.totalShares ? ' / ' + p.totalShares : ''} · Entry <span>${fmt(p.entryPrice)}</span> · Now <span>${fmt(p.currentPrice)}</span><br>
+      P&L <span style="color:${p.pnl>=0?'var(--green)':'var(--red)'}">${fmt(p.pnl,0)} (${fmtPct(p.pct)})</span>${p.lastProfitTier ? ' · TP tier ' + p.lastProfitTier : ''}</div></div>`).join('')
     : '<p style="color:var(--dim);font-family:var(--mono);font-size:12px">No open positions — scanner will paper-buy when price nears a MA</p>';
 
   document.getElementById('watchlist-toggles').innerHTML = (data.tickers||[]).map(t =>
@@ -222,6 +223,7 @@ function render() {
     <div class="rule"><strong>Entry:</strong> ${s.entry}</div>
     <div class="rule"><strong>Position size:</strong> ${s.sizing || (data.risk_pct + '% of equity')}</div>
     <div class="rule"><strong>Stop loss:</strong> ${s.exit || 'Close below 55-Day SMA'}</div>
+    <div class="rule"><strong>Take profit:</strong> ${s.take_profit || '+10% sell 25% → +20% sell 25% → +30% exit rest'}</div>
     <div class="rule"><strong>MA levels:</strong> ${s.levels.join(' · ')}</div>
     <div class="rule"><strong>Account:</strong> ${s.account}</div>`;
 
@@ -230,6 +232,7 @@ function render() {
       <div class="rule">Create roles in Discord → Server Settings → Roles. Enable Developer Mode, right-click role → <strong>Copy ID</strong>. Add to Railway:</div>
       <div class="rule"><strong>@Traders</strong> — <code>DISCORD_ROLE_ENTRIES</code> — ping on every paper buy</div>
       <div class="rule"><strong>@Risk</strong> — <code>DISCORD_ROLE_STOPS</code> — ping on 55 SMA stop-loss exits</div>
+      <div class="rule"><strong>@Profits</strong> — <code>DISCORD_ROLE_TAKEPROFIT</code> — ping on take-profit partial/full sells</div>
       <div class="rule"><strong>@Alerts</strong> — <code>DISCORD_ROLE_PROXIMITY</code> — ping when price within 1% of a MA (noisy)</div>
       <div class="rule"><strong>@Daily</strong> — <code>DISCORD_ROLE_DAILY</code> — ping on after-the-bell P&L summary</div>
       <div class="rule"><strong>@Everyone fallback</strong> — <code>DISCORD_ROLE_ALERTS</code> — used if specific role not set</div>

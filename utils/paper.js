@@ -72,9 +72,11 @@ function buy(ticker, maKey, maLabel, price, shares, reason, riskUsd) {
     maKey: maKey,
     maLabel: maLabel,
     shares: shares,
+    totalShares: shares,
     entryPrice: price,
     entryTime: new Date().toISOString(),
-    costBasis: cost
+    costBasis: cost,
+    lastProfitTier: 0
   };
   var trade = {
     type: "buy",
@@ -90,6 +92,41 @@ function buy(ticker, maKey, maLabel, price, shares, reason, riskUsd) {
   };
   portfolio.trades.unshift(trade);
   if (portfolio.trades.length > 500) portfolio.trades.pop();
+  savePortfolio(portfolio);
+  return trade;
+}
+
+function sellPartial(key, price, sellShares, reason) {
+  var pos = portfolio.positions[key];
+  if (!pos || sellShares < 1) return null;
+  sellShares = Math.min(sellShares, pos.shares);
+  if (sellShares >= pos.shares) return sell(key, price, reason);
+
+  var proceeds = sellShares * price;
+  var costPortion = pos.costBasis * (sellShares / pos.shares);
+  var pnl = proceeds - costPortion;
+  var pct = ((price - pos.entryPrice) / pos.entryPrice) * 100;
+
+  portfolio.cash += proceeds;
+  pos.shares -= sellShares;
+  pos.costBasis -= costPortion;
+
+  var trade = {
+    type: "sell",
+    partial: true,
+    ticker: pos.ticker,
+    maKey: pos.maKey,
+    maLabel: pos.maLabel,
+    shares: sellShares,
+    remaining: pos.shares,
+    price: price,
+    entryPrice: pos.entryPrice,
+    pnl: pnl,
+    pct: pct,
+    reason: reason,
+    time: new Date().toISOString()
+  };
+  portfolio.trades.unshift(trade);
   savePortfolio(portfolio);
   return trade;
 }
@@ -134,10 +171,12 @@ function getUnrealizedPnL(livePrices) {
       ticker: pos.ticker,
       maLabel: pos.maLabel,
       shares: pos.shares,
+      totalShares: pos.totalShares || pos.shares,
       entryPrice: pos.entryPrice,
       currentPrice: px,
       pnl: parseFloat(pnl.toFixed(2)),
-      pct: parseFloat((((px - pos.entryPrice) / pos.entryPrice) * 100).toFixed(2))
+      pct: parseFloat((((px - pos.entryPrice) / pos.entryPrice) * 100).toFixed(2)),
+      lastProfitTier: pos.lastProfitTier || 0
     });
   });
   return { total: parseFloat(total.toFixed(2)), details: details };
@@ -168,6 +207,13 @@ function getOpenPositions() {
   });
 }
 
+function markProfitTier(key, tier) {
+  if (portfolio.positions[key]) {
+    portfolio.positions[key].lastProfitTier = tier;
+    savePortfolio(portfolio);
+  }
+}
+
 function resetPortfolio() {
   portfolio = {
     cash: tickers.STARTING_BALANCE,
@@ -188,6 +234,8 @@ module.exports = {
   hasPosition: hasPosition,
   buy: buy,
   sell: sell,
+  sellPartial: sellPartial,
+  markProfitTier: markProfitTier,
   getUnrealizedPnL: getUnrealizedPnL,
   getPnlSummary: getPnlSummary,
   resetPortfolio: resetPortfolio,

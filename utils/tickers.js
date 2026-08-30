@@ -70,6 +70,13 @@ var TRADE_SIZE = parseFloat(process.env.TRADE_SIZE_USD || "0"); // 0 = use risk 
 var STARTING_BALANCE = parseFloat(process.env.PAPER_BALANCE || "50000");
 var STOP_MA_KEY = "d_sma55"; // stop loss: daily close below 55 SMA
 
+// Take profit tiers: at gain % → sell % of original shares (last tier sells all remaining)
+var TAKE_PROFIT_TIERS = [
+  { pct: parseFloat(process.env.TP_TIER1_PCT || "10"), sellPct: parseFloat(process.env.TP_TIER1_SELL || "25") / 100, label: "+10% — sell 25%" },
+  { pct: parseFloat(process.env.TP_TIER2_PCT || "20"), sellPct: parseFloat(process.env.TP_TIER2_SELL || "25") / 100, label: "+20% — sell 25%" },
+  { pct: parseFloat(process.env.TP_TIER3_PCT || "30"), sellPct: 1.0, label: "+30% — exit remaining" }
+];
+
 module.exports = {
   getAllTickers: getAllTickers,
   getYahooSymbol: getYahooSymbol,
@@ -80,5 +87,6 @@ module.exports = {
   TRADE_SIZE: TRADE_SIZE,
   STARTING_BALANCE: STARTING_BALANCE,
   STOP_MA_KEY: STOP_MA_KEY,
+  TAKE_PROFIT_TIERS: TAKE_PROFIT_TIERS,
   SECTOR_SPDR: SECTOR_SPDR
 };

@@ -53,6 +53,54 @@ async function processStopLosses(results) {
   return exits;
 }
 
+async function processTakeProfits(results) {
+  var tpExits = 0;
+
+  paper.getOpenPositions().forEach(function (entry) {
+    var key = entry.key;
+    var pos = entry.pos;
+    var data = results[pos.ticker];
+    if (!data || !data.price || pos.entryPrice <= 0) return;
+
+    var gainPct = ((data.price - pos.entryPrice) / pos.entryPrice) * 100;
+    var tierIdx = pos.lastProfitTier || 0;
+    var original = pos.totalShares || pos.shares;
+
+    for (var i = tierIdx; i < tickers.TAKE_PROFIT_TIERS.length; i++) {
+      var tier = tickers.TAKE_PROFIT_TIERS[i];
+      if (gainPct < tier.pct) break;
+
+      var open = paper.getOpenPositions().find(function (e) { return e.key === key; });
+      if (!open) break;
+      pos = open.pos;
+
+      var sellShares;
+      if (tier.sellPct >= 1) {
+        sellShares = pos.shares;
+      } else {
+        sellShares = Math.max(1, Math.floor(original * tier.sellPct));
+        sellShares = Math.min(sellShares, pos.shares);
+      }
+
+      var reason = "Take profit " + tier.label + " (+" + gainPct.toFixed(1) + "%)";
+      var trade = sellShares >= pos.shares
+        ? paper.sell(key, data.price, reason)
+        : paper.sellPartial(key, data.price, sellShares, reason);
+
+      if (trade) {
+        tpExits++;
+        paper.markProfitTier(key, i + 1);
+        state.logEvent("TAKE_PROFIT", pos.ticker + " " + tier.label + " sold " + sellShares + "sh @ $" + data.price + " (+" + gainPct.toFixed(1) + "%)");
+        discord.postTakeProfit(pos.ticker, pos.maLabel, tier.label, data.price, sellShares, trade.pnl, trade.pct, trade.remaining).catch(function () {});
+      }
+
+      if (!paper.getOpenPositions().find(function (e) { return e.key === key; })) break;
+    }
+  });
+
+  return tpExits;
+}
+
 async function processTicker(data, livePrices) {
   if (data.error || !data.price) return { alerts: 0, entries: 0 };
 
@@ -107,6 +155,7 @@ async function runScan(force) {
     });
 
     var totalExits = await processStopLosses(results);
+    var totalTakeProfits = await processTakeProfits(results);
 
     var totalAlerts = 0;
     var totalEntries = 0;
@@ -129,7 +178,7 @@ async function runScan(force) {
     var unrealized = paper.getUnrealizedPnL(livePrices);
     var equity = paper.getEquity(livePrices);
 
-    state.logEvent("SCAN_DONE", totalAlerts + " alerts, " + totalEntries + " entries, " + totalExits + " stops, equity $" + equity.toFixed(0));
+    state.logEvent("SCAN_DONE", totalAlerts + " alerts, " + totalEntries + " entries, " + totalExits + " stops, " + totalTakeProfits + " TPs, equity $" + equity.toFixed(0));
 
     return {
       ok: true,
@@ -138,6 +187,7 @@ async function runScan(force) {
       alerts: totalAlerts,
       entries: totalEntries,
       exits: totalExits,
+      take_profits: totalTakeProfits,
       near_hits: nearHits,
       equity: equity,
       unrealized: unrealized.total

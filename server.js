@@ -87,11 +87,13 @@ app.get("/api/overview", async (req, res) => {
         entry: "Paper buy when price within " + (tickers.PROXIMITY_PCT * 100) + "% of any monitored MA",
         sizing: (tickers.RISK_PCT * 100) + "% of equity per entry (~" + formatUsd(paper.getPositionSizeUSD(livePrices)) + " at current equity)",
         exit: "Stop loss when price closes below 55-Day SMA",
+        take_profit: tickers.TAKE_PROFIT_TIERS.map(function (t) { return t.label; }).join(" → "),
         levels: tickers.MA_LEVELS.map(function (l) { return l.label; }),
         account: "$50,000 paper",
         discord_roles: {
           DISCORD_ROLE_ENTRIES: "Ping on paper buys (e.g. @Traders)",
           DISCORD_ROLE_STOPS: "Ping on stop-loss exits (e.g. @Risk)",
+          DISCORD_ROLE_TAKEPROFIT: "Ping on take-profit sells (e.g. @Profits)",
           DISCORD_ROLE_PROXIMITY: "Ping on MA proximity alerts (e.g. @Alerts)",
           DISCORD_ROLE_DAILY: "Ping on after-the-bell P&L (e.g. @Daily)",
           DISCORD_ROLE_ALERTS: "Fallback ping for all alert types"
