@@ -398,7 +398,7 @@ function buildSundayPremarketEmbeds(livePricesByPool) {
       return {
         color: 0x4da6ff,
         title: poolTag(pool.id) + "🌅 SUNDAY PREMARKET",
-        description: "Week-ahead briefing · " + dateLabel + " · " + timeLabel + " · Book from 6/30/26 rebalance",
+        description: "Week-ahead briefing · " + dateLabel + " · " + timeLabel + " · Entries at April 2026 lows",
         fields: fields,
         footer: { text: accountFooter(pool.id) },
         timestamp: new Date().toISOString()

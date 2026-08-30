@@ -1,16 +1,14 @@
 // Space DC book:
-// 1) $2,000 added to each name at its April 2026 low
-// 2) 6/30/26 rebalance on a $200,000 book (IRDM out, 10% cash, NVDA/GOOGL anchors)
-// Current shares = round(weight × $200,000 / 6/30 close)
-// Entry = blended: April $2,000 lot + extra shares filled at the 6/30 close
+// Share counts from 6/30/26 weights on a $200,000 book (IRDM out, NVDA/GOOGL anchors)
+// Every lot is entered at its April 2026 low — no blend with the rebalance close
+// Cash = $200,000 − sum(shares × April low)
 
 var paper = require("./paper");
 var pools = require("./pools");
 
 var REBALANCE_EQUITY = 200000;
-var APRIL_BUY_USD = 2000;
-var BOOK_VERSION = 3;
-var REBALANCE_TIME = "2026-06-30T19:52:00.000Z"; // 3:52 PM ET
+var BOOK_VERSION = 4;
+var REBALANCE_TIME = "2026-06-30T19:52:00.000Z"; // 3:52 PM ET — share-count basis
 
 var LOTS = [
   { ticker: "NVDA", weight: 0.16, rebalancePrice: 200.09, aprilLow: 171.37, aprilDate: "2026-04-02" },
@@ -37,20 +35,14 @@ function lotsWithShares() {
   return LOTS.map(function (lot) {
     var target = REBALANCE_EQUITY * lot.weight;
     var shares = Math.max(1, Math.round(target / lot.rebalancePrice));
-    var aprilShares = Math.max(1, Math.round(APRIL_BUY_USD / lot.aprilLow));
-    var aprilCost = aprilShares * lot.aprilLow;
-    var extra = Math.max(0, shares - aprilShares);
-    var cost = extra > 0
-      ? aprilCost + extra * lot.rebalancePrice
-      : shares * lot.aprilLow;
-    var entryPrice = cost / shares;
+    var entryPrice = lot.aprilLow;
+    var cost = shares * entryPrice;
     return {
       ticker: lot.ticker,
       weight: lot.weight,
       rebalancePrice: lot.rebalancePrice,
       aprilLow: lot.aprilLow,
       aprilDate: lot.aprilDate,
-      aprilShares: aprilShares,
       target: target,
       shares: shares,
       cost: cost,
@@ -63,13 +55,13 @@ function applyBook(p) {
   var lots = lotsWithShares();
   p.startingBalance = REBALANCE_EQUITY;
   p.positions = {};
-  var investedAtRebalance = 0;
+  var invested = 0;
   lots.forEach(function (lot) {
     var key = paper.positionKey(lot.ticker, "rebalance");
     p.positions[key] = {
       ticker: lot.ticker,
       maKey: "rebalance",
-      maLabel: "April low + 6/30 rebalance",
+      maLabel: "April low",
       shares: lot.shares,
       totalShares: lot.shares,
       entryPrice: parseFloat(lot.entryPrice.toFixed(4)),
@@ -78,9 +70,9 @@ function applyBook(p) {
       lastProfitTier: 0,
       heldBook: true
     };
-    investedAtRebalance += lot.shares * lot.rebalancePrice;
+    invested += lot.cost;
   });
-  p.cash = parseFloat((REBALANCE_EQUITY - investedAtRebalance).toFixed(2));
+  p.cash = parseFloat((REBALANCE_EQUITY - invested).toFixed(2));
   p.seededFromRebalance = true;
   p.seededBookVersion = BOOK_VERSION;
   p.wins = p.wins || 0;
@@ -109,7 +101,6 @@ function watchlistTickers() {
 
 module.exports = {
   REBALANCE_EQUITY: REBALANCE_EQUITY,
-  APRIL_BUY_USD: APRIL_BUY_USD,
   BOOK_VERSION: BOOK_VERSION,
   REBALANCE_TIME: REBALANCE_TIME,
   LOTS: LOTS,
