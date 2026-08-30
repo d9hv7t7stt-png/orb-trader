@@ -225,17 +225,18 @@ async function main() {
     assert.strictEqual(spaceDcBook.SOLD[0].ticker, "IRDM");
   });
 
-  await test("share counts come from 6/30/26 closes and $108k weights", function () {
+  await test("share counts come from 6/30/26 closes and $200k weights", function () {
     var lots = spaceDcBook.lotsWithShares();
     var byTicker = {};
     lots.forEach(function (l) { byTicker[l.ticker] = l; });
-    assert.strictEqual(byTicker.NVDA.shares, 86);
-    assert.strictEqual(byTicker.GOOGL.shares, 42);
-    assert.strictEqual(byTicker.ASTS.shares, 97);
-    assert.strictEqual(byTicker.ONDS.shares, 393);
+    assert.strictEqual(byTicker.NVDA.shares, 160);
+    assert.strictEqual(byTicker.GOOGL.shares, 78);
+    assert.strictEqual(byTicker.ASTS.shares, 180);
+    assert.strictEqual(byTicker.ONDS.shares, 728);
     var invested = lots.reduce(function (s, l) { return s + l.cost; }, 0);
     var cash = spaceDcBook.REBALANCE_EQUITY - invested;
-    assert.ok(cash > 10000 && cash < 12000, "cash should be ~10%, got " + cash);
+    assert.ok(cash > 19000 && cash < 22000, "cash should be ~10%, got " + cash);
+    assert.strictEqual(spaceDcBook.REBALANCE_EQUITY, 200000);
   });
 
   await test("seedSpaceDcBook writes 15 held lots and ~10% cash", function () {
@@ -243,13 +244,13 @@ async function main() {
     var p = spaceDcBook.seedSpaceDcBook(true);
     assert.strictEqual(Object.keys(p.positions).length, 15);
     assert.strictEqual(p.seededFromRebalance, true);
-    assert.ok(p.cash > 10000 && p.cash < 12000);
+    assert.ok(p.cash > 19000 && p.cash < 22000);
     Object.values(p.positions).forEach(function (pos) {
       assert.strictEqual(pos.heldBook, true);
       assert.ok(pos.shares >= 1);
     });
     var again = spaceDcBook.seedSpaceDcBook(false);
-    assert.strictEqual(again.positions["NVDA:rebalance"].shares, 86);
+    assert.strictEqual(again.positions["NVDA:rebalance"].shares, 160);
   });
 
   console.log("\ndiscord");
@@ -361,7 +362,7 @@ async function main() {
     assert.ok(blob.indexOf("$48.10") !== -1);
     assert.ok(blob.indexOf("$47.20") !== -1);
     assert.ok(blob.indexOf("$200.09") !== -1);
-    assert.ok(blob.indexOf("86") !== -1);
+    assert.ok(blob.indexOf("160") !== -1);
     assert.ok(blob.indexOf("IRDM") !== -1);
     assert.ok(blob.indexOf("Sold @ $54") !== -1);
     assert.ok(blob.indexOf("CASH") !== -1);

@@ -23,7 +23,7 @@ var POOLS = {
     name: "Data Center in Space",
     shortLabel: "Space DC",
     label: "Space DC",
-    startingBalance: parseFloat(process.env.SPACE_DC_BALANCE || "108000"),
+    startingBalance: parseFloat(process.env.SPACE_DC_BALANCE || "200000"),
     getTickers: function () { return SPACE_DC_TICKERS.slice(); },
     yahooMap: {}
   }
