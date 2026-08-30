@@ -6,7 +6,7 @@ var paper = require("./paper");
 var pools = require("./pools");
 
 var BUY_USD = 1000;
-var BOOK_VERSION = 1;
+var BOOK_VERSION = 2;
 var STARTING_BALANCE = pools.POOLS.main.startingBalance;
 
 var LOTS = [
@@ -53,7 +53,7 @@ function applyBook(p) {
     p.positions[key] = {
       ticker: lot.ticker,
       maKey: "april_low",
-      maLabel: "April low",
+      maLabel: "",
       shares: lot.shares,
       totalShares: lot.shares,
       entryPrice: parseFloat(lot.entryPrice.toFixed(4)),

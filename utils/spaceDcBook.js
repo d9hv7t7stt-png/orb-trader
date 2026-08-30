@@ -8,7 +8,7 @@ var paper = require("./paper");
 var pools = require("./pools");
 
 var REBALANCE_EQUITY = 200000;
-var BOOK_VERSION = 5;
+var BOOK_VERSION = 6;
 var REBALANCE_TIME = "2026-06-30T19:52:00.000Z"; // 3:52 PM ET — share-count basis
 
 var LOTS = [
@@ -62,7 +62,7 @@ function applyBook(p) {
     p.positions[key] = {
       ticker: lot.ticker,
       maKey: "rebalance",
-      maLabel: "April low",
+      maLabel: "",
       shares: lot.shares,
       totalShares: lot.shares,
       entryPrice: parseFloat(lot.entryPrice.toFixed(4)),
