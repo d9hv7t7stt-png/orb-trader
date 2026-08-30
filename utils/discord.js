@@ -141,13 +141,11 @@ function scheduleSundayPremarket() {
 async function postProximityAlert(poolId, ticker, price, level) {
   await sendDiscord({ embeds: [{
     color: 0x4da6ff,
-    title: poolTag(poolId) + (require("./tickers").isAlertOnly(ticker) ? "📍 WATCH — " : "📍 MA PROXIMITY — ") + ticker,
-    description: ticker + " is within **" + level.proximity_pct + "%** of **" + level.label + "**" +
-      (require("./tickers").isAlertOnly(ticker) ? "\n*Watch only — sector ETFs are alerts, not trades.*" : ""),
+    title: poolTag(poolId) + "📍 MA — " + ticker,
+    description: ticker + " is near **" + level.label + "**",
     fields: [
       { name: "Price", value: "$" + price.toFixed(2), inline: true },
-      { name: "MA Level", value: "$" + level.value.toFixed(2), inline: true },
-      { name: "Distance", value: formatPct((level.distance / level.value) * 100), inline: true }
+      { name: level.label, value: "$" + level.value.toFixed(2), inline: true }
     ],
     footer: { text: accountFooter(poolId) },
     timestamp: new Date().toISOString()
@@ -164,7 +162,7 @@ async function postStockEntry(poolId, ticker, maLabel, price, shares, total, pro
       { name: "Price", value: "$" + price.toFixed(2), inline: true },
       { name: "Cost", value: formatMoney(total), inline: true },
       { name: "Risk Size", value: formatMoney(riskUsd) + " (" + (parseFloat(process.env.RISK_PCT || "2")) + "% equity)", inline: true },
-      { name: "MA Proximity", value: proximityPct + "%", inline: true }
+      { name: "MA", value: maLabel, inline: true },
     ],
     footer: { text: accountFooter(poolId) },
     timestamp: new Date().toISOString()
@@ -229,7 +227,11 @@ async function postStockDailySummary(livePricesByPool) {
       return e + " " + t.ticker + ": " + formatMoney(t.pnl) + " (" + formatPct(t.pct) + ") — " + t.reason;
     }).join("\n") || "No closed trades today";
 
-    var openLines = Object.values(p.positions).map(function (pos) {
+    var allowed = {};
+    pool.getTickers().forEach(function (t) { allowed[t] = true; });
+    var openLines = Object.values(p.positions).filter(function (pos) {
+      return allowed[pos.ticker];
+    }).map(function (pos) {
       var px = livePrices[pos.ticker] ? livePrices[pos.ticker].price : pos.entryPrice;
       var u = (px - pos.entryPrice) * pos.shares;
       return "• " + pos.ticker + " (" + pos.maLabel + ") " + pos.shares + "sh · uP&L " + formatMoney(u);
@@ -274,7 +276,6 @@ function groupNearHits(hits) {
 function buildSundayPremarketEmbeds(livePricesByPool) {
   var paperMod = require("./paper");
   var stateMod = require("./state");
-  var tickersMod = require("./tickers");
   var dateLabel = new Date().toLocaleDateString("en-US", {
     weekday: "long", month: "short", day: "numeric", timeZone: "America/New_York"
   });
@@ -288,7 +289,11 @@ function buildSundayPremarketEmbeds(livePricesByPool) {
     var netPnl = equity - p.startingBalance;
     var s = stateMod.getState(pool.id);
 
-    var openLines = Object.values(p.positions).map(function (pos) {
+    var allowed = {};
+    pool.getTickers().forEach(function (t) { allowed[t] = true; });
+    var knownPositions = Object.values(p.positions).filter(function (pos) { return allowed[pos.ticker]; });
+
+    var openLines = knownPositions.map(function (pos) {
       var px = livePrices[pos.ticker] ? livePrices[pos.ticker].price : pos.entryPrice;
       var u = (px - pos.entryPrice) * pos.shares;
       var pct = pos.entryPrice ? ((px - pos.entryPrice) / pos.entryPrice) * 100 : 0;
@@ -299,13 +304,14 @@ function buildSundayPremarketEmbeds(livePricesByPool) {
     Object.values(s.scanResults || {}).forEach(function (r) {
       if (!r || !r.levels) return;
       r.levels.filter(function (l) { return l.near; }).forEach(function (l) {
-        nearHits.push({ ticker: r.ticker, level: l.label, proximity_pct: l.proximity_pct });
+        nearHits.push({ ticker: r.ticker, level: l.label, ma: l.value });
       });
     });
     var nearLines = groupNearHits(nearHits).map(function (g) {
-      var watch = tickersMod.isAlertOnly(g.ticker) ? " (watch)" : "";
-      var chips = g.levels.map(function (l) { return l.level + " " + l.proximity_pct + "%"; }).join(", ");
-      return "• " + g.ticker + watch + " — " + chips;
+      var chips = g.levels.map(function (l) {
+        return l.level + " " + (l.ma != null ? formatMoney(l.ma) : "—");
+      }).join(", ");
+      return "• " + g.ticker + " — " + chips;
     }).join("\n") || "Nothing within 1% of a monitored MA";
 
     return {
@@ -317,10 +323,10 @@ function buildSundayPremarketEmbeds(livePricesByPool) {
         { name: "Cash", value: formatMoney(p.cash), inline: true },
         { name: "Unrealized", value: formatMoney(unreal.total), inline: true },
         { name: "Net P&L", value: formatMoney(netPnl), inline: true },
-        { name: "Open", value: String(Object.keys(p.positions).length), inline: true },
+        { name: "Open", value: String(knownPositions.length), inline: true },
         { name: "Next Entry", value: formatMoney(paperMod.getPositionSizeUSD(pool.id, livePrices)), inline: true },
         { name: "Open Positions", value: openLines.slice(0, 1000), inline: false },
-        { name: "Near MA (1%)", value: nearLines.slice(0, 1000), inline: false }
+        { name: "Near MA", value: nearLines.slice(0, 1000), inline: false }
       ],
       footer: { text: accountFooter(pool.id) },
       timestamp: new Date().toISOString()
