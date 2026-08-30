@@ -10,6 +10,15 @@ var CORE = [
 // User requested DRAM — also include MU (Micron) as DRAM sector proxy if DRAM illiquid
 var EXTRA = ["DRAM", "MU"];
 
+var MAG7 = ["AAPL", "AMZN", "GOOG", "META", "MSFT", "NVDA", "TSLA"];
+
+// Sunday briefing Near MA list: indexes, Mag7, metals, then sector SPDRs A–Z
+var BRIEFING_DAILY_MA_KEYS = ["d_ema21", "d_sma55"];
+var BRIEFING_DISPLAY_NAMES = { SPXW: "SPX" };
+var MAIN_BRIEFING_ORDER = ["SPXW", "SPY", "QQQ", "IWM"]
+  .concat(MAG7)
+  .concat(["SPCX", "GLD", "SLV"]);
+
 var SECTOR_SPDR = [
   "XLC",  // Communication Services
   "XLY",  // Consumer Discretionary
@@ -45,6 +54,30 @@ function isAlertOnly(ticker) {
 
 function getYahooSymbol(ticker) {
   return YAHOO_MAP[ticker] || ticker;
+}
+
+function getDisplayTicker(ticker) {
+  return BRIEFING_DISPLAY_NAMES[ticker] || ticker;
+}
+
+function briefingRank(ticker) {
+  var i = MAIN_BRIEFING_ORDER.indexOf(ticker);
+  if (i !== -1) return i;
+  if (isAlertOnly(ticker)) {
+    var sectors = SECTOR_SPDR.slice().sort();
+    var si = sectors.indexOf(ticker);
+    return 1000 + (si < 0 ? 99 : si);
+  }
+  return 500;
+}
+
+function isBriefingTicker(ticker) {
+  return MAIN_BRIEFING_ORDER.indexOf(ticker) !== -1 || isAlertOnly(ticker);
+}
+
+function isBriefingMa(level) {
+  var key = level && (level.key || level.maKey);
+  return BRIEFING_DAILY_MA_KEYS.indexOf(key) !== -1;
 }
 
 function getDisplayName(ticker) {
@@ -86,6 +119,13 @@ module.exports = {
   getAllTickers: getAllTickers,
   getYahooSymbol: getYahooSymbol,
   getDisplayName: getDisplayName,
+  getDisplayTicker: getDisplayTicker,
+  briefingRank: briefingRank,
+  isBriefingMa: isBriefingMa,
+  isBriefingTicker: isBriefingTicker,
+  MAG7: MAG7,
+  BRIEFING_DAILY_MA_KEYS: BRIEFING_DAILY_MA_KEYS,
+  MAIN_BRIEFING_ORDER: MAIN_BRIEFING_ORDER,
   isAlertOnly: isAlertOnly,
   MA_LEVELS: MA_LEVELS,
   PROXIMITY_PCT: PROXIMITY_PCT,
