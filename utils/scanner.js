@@ -54,7 +54,6 @@ function processStopLosses(poolId, results) {
     var data = results[pos.ticker];
     if (!data || !data.levels) return;
     if (tickers.isAlertOnly(pos.ticker)) return;
-    if (pos.heldBook) return;
 
     var sma55 = data.levels.find(function (l) { return l.key === tickers.STOP_MA_KEY; });
     if (!sma55 || sma55.value == null) return;
@@ -82,7 +81,6 @@ function processTakeProfits(poolId, results) {
     var data = results[pos.ticker];
     if (!data || !data.price || pos.entryPrice <= 0) return;
     if (tickers.isAlertOnly(pos.ticker)) return;
-    if (pos.heldBook) return;
 
     var gainPct = ((data.price - pos.entryPrice) / pos.entryPrice) * 100;
     var tierIdx = pos.lastProfitTier || 0;
@@ -312,5 +310,7 @@ module.exports = {
   scheduleScanner: scheduleScanner,
   startupScanForced: startupScanForced,
   isBelowStopMA: isBelowStopMA,
+  processStopLosses: processStopLosses,
+  processTakeProfits: processTakeProfits,
   flattenAllAlertOnlyPositions: flattenAllAlertOnlyPositions
 };
