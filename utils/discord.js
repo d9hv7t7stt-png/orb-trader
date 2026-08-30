@@ -262,13 +262,22 @@ async function postStockDailySummary(livePricesByPool) {
   }] }, "daily");
 }
 
-function groupNearHits(hits) {
+function groupNearHits(hits, ordered) {
   var map = {};
   hits.forEach(function (h) {
     if (!map[h.ticker]) map[h.ticker] = [];
     map[h.ticker].push(h);
   });
-  return Object.keys(map).sort().map(function (ticker) {
+  var tickersMod = require("./tickers");
+  var keys = Object.keys(map);
+  if (ordered) {
+    keys.sort(function (a, b) {
+      return tickersMod.briefingRank(a) - tickersMod.briefingRank(b);
+    });
+  } else {
+    keys.sort();
+  }
+  return keys.map(function (ticker) {
     return { ticker: ticker, levels: map[ticker] };
   });
 }
@@ -300,19 +309,22 @@ function buildSundayPremarketEmbeds(livePricesByPool) {
       return "• " + pos.ticker + " (" + pos.maLabel + ") " + pos.shares + "sh · " + formatMoney(u) + " (" + formatPct(pct) + ")";
     }).join("\n") || "No open positions — waiting for MA proximity";
 
+    var tickersMod = require("./tickers");
+    var useMainOrder = pool.id === "main";
     var nearHits = [];
     Object.values(s.scanResults || {}).forEach(function (r) {
       if (!r || !r.levels) return;
-      r.levels.filter(function (l) { return l.near; }).forEach(function (l) {
-        nearHits.push({ ticker: r.ticker, level: l.label, ma: l.value });
+      r.levels.filter(function (l) { return l.near && tickersMod.isBriefingMa(l); }).forEach(function (l) {
+        if (useMainOrder && !tickersMod.isBriefingTicker(r.ticker)) return;
+        nearHits.push({ ticker: r.ticker, key: l.key, level: l.label, ma: l.value });
       });
     });
-    var nearLines = groupNearHits(nearHits).map(function (g) {
+    var nearLines = groupNearHits(nearHits, useMainOrder).map(function (g) {
       var chips = g.levels.map(function (l) {
         return l.level + " " + (l.ma != null ? formatMoney(l.ma) : "—");
       }).join(", ");
-      return "• " + g.ticker + " — " + chips;
-    }).join("\n") || "Nothing within 1% of a monitored MA";
+      return "• " + tickersMod.getDisplayTicker(g.ticker) + " — " + chips;
+    }).join("\n") || "Nothing within 1% of the 21-Day EMA or 55-Day SMA";
 
     return {
       color: 0x4da6ff,

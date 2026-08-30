@@ -220,6 +220,31 @@ async function main() {
     assert.ok(openField.value.indexOf("No open positions") !== -1);
   });
 
+  await test("Sunday Near MA uses 21/55 day only, ordered, SPX label", function () {
+    var stateMod = require("../utils/state");
+    stateMod.setScanResults("main", {
+      DRAM: { ticker: "DRAM", levels: [{ key: "d_ema21", label: "21-Day EMA", near: true, value: 50 }] },
+      XLY: { ticker: "XLY", levels: [{ key: "d_ema21", label: "21-Day EMA", near: true, value: 117 }, { key: "w_ema21", label: "21-Week EMA", near: true, value: 116 }] },
+      XLB: { ticker: "XLB", levels: [{ key: "d_ema21", label: "21-Day EMA", near: true, value: 53 }] },
+      SPY: { ticker: "SPY", levels: [{ key: "d_ema21", label: "21-Day EMA", near: true, value: 765 }] },
+      SPXW: { ticker: "SPXW", levels: [{ key: "d_ema21", label: "21-Day EMA", near: true, value: 7669 }, { key: "d_sma200", label: "200-Day SMA", near: true, value: 7000 }] },
+      NVDA: { ticker: "NVDA", levels: [{ key: "d_sma55", label: "55-Day SMA", near: true, value: 210 }] }
+    });
+    var near = discord.buildSundayPremarketEmbeds({}).find(function (e) { return e.title.indexOf("Main") !== -1; })
+      .fields.find(function (f) { return f.name === "Near MA"; }).value;
+    assert.ok(near.indexOf("SPX") !== -1);
+    assert.ok(near.indexOf("SPXW") === -1);
+    assert.ok(near.indexOf("21-Week") === -1);
+    assert.ok(near.indexOf("200-Day") === -1);
+    assert.ok(near.indexOf("DRAM") === -1);
+    var spxAt = near.indexOf("SPX");
+    var spyAt = near.indexOf("SPY");
+    var nvdaAt = near.indexOf("NVDA");
+    var xlbAt = near.indexOf("XLB");
+    var xlyAt = near.indexOf("XLY");
+    assert.ok(spxAt < spyAt && spyAt < nvdaAt && nvdaAt < xlbAt && xlbAt < xlyAt);
+  });
+
   console.log("\nindicators");
   var indicators = require("../utils/indicators");
 
