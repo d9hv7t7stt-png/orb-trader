@@ -103,6 +103,48 @@ function levelValue(scanRow, key) {
   return found && found.value != null ? found.value : null;
 }
 
+function padRight(text, width) {
+  text = String(text);
+  if (text.length > width) return text.slice(0, width);
+  return text.padEnd(width);
+}
+
+function padLeft(text, width) {
+  text = String(text);
+  if (text.length > width) return text.slice(0, width);
+  return text.padStart(width);
+}
+
+function fieldsFromCodeLines(baseName, lines, header) {
+  var limit = 1024;
+  var fields = [];
+  var buf = [];
+  var len = 0;
+  var fence = 8;
+  var headerBlock = header ? header + "\n" : "";
+  var available = limit - fence - headerBlock.length;
+
+  function flush() {
+    if (!buf.length) return;
+    fields.push({
+      name: fields.length === 0 ? baseName : baseName + " (" + (fields.length + 1) + ")",
+      value: "```\n" + headerBlock + buf.join("\n") + "\n```",
+      inline: false
+    });
+    buf = [];
+    len = 0;
+  }
+
+  lines.forEach(function (line) {
+    var add = (buf.length ? 1 : 0) + line.length;
+    if (buf.length && len + add > available) flush();
+    buf.push(line);
+    len += add;
+  });
+  flush();
+  return fields;
+}
+
 function fieldsFromLines(baseName, lines, limit) {
   limit = limit || 1024;
   var fields = [];
@@ -157,21 +199,26 @@ function buildSpaceDcWatchlistFields(livePrices, scanResults) {
       var pct = pos.entryPrice ? ((mark - pos.entryPrice) / pos.entryPrice) * 100 : 0;
       var pnlStr = (pnl > 0 ? "+" : "") + formatMoney(pnl);
       lines.push(
-        "$" + ticker
-          + " - " + formatMaPrice(close)
-          + " - " + pos.shares + " Shares"
-          + " - " + formatMoney(pos.entryPrice)
-          + " - " + pnlStr + " (" + formatPct(pct) + ")"
+        padRight("$" + ticker, 6)
+          + "  " + padLeft(formatMaPrice(close), 10)
+          + "  " + padLeft(pos.shares + " sh", 7)
+          + "  " + padLeft(formatMoney(pos.entryPrice), 10)
+          + "  " + padLeft(pnlStr, 12)
+          + "  " + padLeft("(" + formatPct(pct) + ")", 8)
       );
     } else {
-      lines.push("$" + ticker + " - " + formatMaPrice(close) + " - 0 Shares");
+      lines.push(padRight("$" + ticker, 6) + "  " + padLeft(formatMaPrice(close), 10) + "  " + padLeft("0 sh", 7));
     }
   });
-  lines.push("$CASH - " + formatMoney(p.cash));
+  lines.push(padRight("$CASH", 6) + "  " + padLeft(formatMoney(p.cash), 10));
   spaceDcBook.SOLD.forEach(function (sold) {
-    lines.push("$" + sold.ticker + " - Sold @ $54");
+    lines.push(padRight("$" + sold.ticker, 6) + "  Sold @ $54");
   });
-  return fieldsFromLines("Watchlist", lines);
+  return fieldsFromCodeLines(
+    "Watchlist",
+    lines,
+    padRight("TICK", 6) + "  " + padLeft("CLOSE", 10) + "  " + padLeft("SHARES", 7) + "  " + padLeft("ENTRY", 10) + "  " + padLeft("P&L", 12) + "  " + padLeft("%", 8)
+  );
 }
 
 function buildMainWatchlistFields(scanResults) {
@@ -179,12 +226,12 @@ function buildMainWatchlistFields(scanResults) {
   scanResults = scanResults || {};
   var lines = tickersMod.getMainBriefingTickers().map(function (ticker) {
     var row = scanResults[ticker] || {};
-    return "$" + tickersMod.getDisplayTicker(ticker)
-      + " - " + formatMaPrice(priorClose(row, null))
-      + " - 21 " + formatMaPrice(levelValue(row, "d_ema21"))
-      + " - 55 " + formatMaPrice(levelValue(row, "d_sma55"));
+    return padRight("$" + tickersMod.getDisplayTicker(ticker), 6)
+      + "  " + padLeft(formatMaPrice(priorClose(row, null)), 10)
+      + "  21D: " + padLeft(formatMaPrice(levelValue(row, "d_ema21")), 10)
+      + "  55D: " + padLeft(formatMaPrice(levelValue(row, "d_sma55")), 10);
   });
-  return fieldsFromLines("Watchlist", lines);
+  return fieldsFromCodeLines("Watchlist", lines);
 }
 
 function livePricesFromState() {

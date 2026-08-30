@@ -315,9 +315,13 @@ async function main() {
       var label = tickers.getDisplayTicker(t);
       assert.ok(watch.indexOf(label) !== -1, "missing " + label);
     });
-    assert.ok(watch.indexOf("```") === -1);
+    assert.ok(watch.indexOf("```") !== -1);
     assert.ok(watch.indexOf("│") === -1 && watch.indexOf("┼") === -1);
-    assert.ok(watch.indexOf("$SPX - $7,680.00 - 21 $7,669.00 - 55 $7,400.00") !== -1);
+    assert.ok(watch.indexOf("21D:") !== -1 && watch.indexOf("55D:") !== -1);
+    assert.ok(watch.indexOf("$SPX") !== -1);
+    assert.ok(watch.indexOf("$7,680.00") !== -1);
+    assert.ok(watch.indexOf("$7,669.00") !== -1);
+    assert.ok(watch.indexOf("$7,400.00") !== -1);
     assert.ok(watch.indexOf("SPXW") === -1);
     assert.ok(watch.indexOf("21-Week") === -1);
     assert.ok(watch.indexOf("200-Day") === -1);
@@ -357,12 +361,16 @@ async function main() {
     }).find(function (e) { return e.title.indexOf("Space DC") !== -1; });
     var blob = space.fields.map(function (f) { return f.name + "\n" + f.value; }).join("\n");
     pools.SPACE_DC_TICKERS.forEach(function (t) {
-      assert.ok(blob.indexOf("$" + t + " - ") !== -1, "missing $" + t);
+      assert.ok(blob.indexOf("$" + t) !== -1, "missing $" + t);
     });
-    assert.ok(blob.indexOf("```") === -1 && blob.indexOf("│") === -1);
-    assert.ok(blob.indexOf("$NVDA - $49.25 - 160 Shares - $197.94 - ") !== -1);
-    assert.ok(blob.indexOf("$CASH - ") !== -1);
-    assert.ok(blob.indexOf("$IRDM - Sold @ $54") !== -1);
+    assert.ok(blob.indexOf("```") !== -1 && blob.indexOf("│") === -1);
+    assert.ok(blob.indexOf("$NVDA") !== -1);
+    assert.ok(blob.indexOf("$49.25") !== -1);
+    assert.ok(blob.indexOf("160 sh") !== -1);
+    assert.ok(blob.indexOf("$197.94") !== -1);
+    assert.ok(blob.indexOf("$CASH") !== -1);
+    assert.ok(blob.indexOf("$IRDM") !== -1);
+    assert.ok(blob.indexOf("Sold @ $54") !== -1);
     assert.ok(blob.indexOf("21-Day") === -1);
     assert.ok(!space.fields.some(function (f) { return f.name === "Near MA" || f.name === "Cash & sold"; }));
     space.fields.filter(function (f) { return f.name.indexOf("Watchlist") === 0; }).forEach(function (f) {
