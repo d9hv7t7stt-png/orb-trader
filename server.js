@@ -139,7 +139,7 @@ app.get("/api/overview", async (req, res) => {
       trade_size: poolOverview.trade_size,
       strategy: {
         data_source: "Yahoo Finance",
-        entry: "Paper buy when price within " + (tickers.PROXIMITY_PCT * 100) + "% of any monitored MA (one position per ticker per pool)",
+        entry: "Paper buy when price within " + (tickers.PROXIMITY_PCT * 100) + "% of any monitored MA (one position per ticker per pool). Sector SPDRs (XLC–XLU) are watch-only — Discord alerts, no paper trades.",
         sizing: (tickers.RISK_PCT * 100) + "% of equity per entry (~" + formatUsd(poolOverview.trade_size) + " at current equity)",
         exit: "Stop loss when daily close is below 55-Day SMA",
         take_profit: tickers.TAKE_PROFIT_TIERS.map(function (t) { return t.label; }).join(" → "),

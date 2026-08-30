@@ -39,6 +39,10 @@ function getAllTickers() {
   });
 }
 
+function isAlertOnly(ticker) {
+  return SECTOR_SPDR.indexOf(ticker) !== -1;
+}
+
 function getYahooSymbol(ticker) {
   return YAHOO_MAP[ticker] || ticker;
 }
@@ -82,6 +86,7 @@ module.exports = {
   getAllTickers: getAllTickers,
   getYahooSymbol: getYahooSymbol,
   getDisplayName: getDisplayName,
+  isAlertOnly: isAlertOnly,
   MA_LEVELS: MA_LEVELS,
   PROXIMITY_PCT: PROXIMITY_PCT,
   RISK_PCT: RISK_PCT,

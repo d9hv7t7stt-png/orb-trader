@@ -20,6 +20,22 @@ function markAlert(poolId, ticker, maKey) {
   state.setLastAlert(poolId, ticker + ":" + maKey, new Date().toISOString());
 }
 
+function flattenAlertOnlyPositions(poolId, results) {
+  var flattened = 0;
+  paper.getOpenPositions(poolId).forEach(function (entry) {
+    var pos = entry.pos;
+    if (!tickers.isAlertOnly(pos.ticker)) return;
+    var data = results[pos.ticker];
+    var px = data && data.price ? data.price : pos.entryPrice;
+    var trade = paper.sell(poolId, entry.key, px, "Alert-only unwind — sector ETF is watch-only");
+    if (trade) {
+      flattened++;
+      state.logEvent("ALERT_ONLY", pos.ticker + " flattened (sector ETFs are notifications only)", poolId);
+    }
+  });
+  return flattened;
+}
+
 function processStopLosses(poolId, results) {
   var exits = 0;
 
@@ -28,6 +44,7 @@ function processStopLosses(poolId, results) {
     var pos = entry.pos;
     var data = results[pos.ticker];
     if (!data || !data.levels) return;
+    if (tickers.isAlertOnly(pos.ticker)) return;
 
     var sma55 = data.levels.find(function (l) { return l.key === tickers.STOP_MA_KEY; });
     if (!sma55 || sma55.value == null) return;
@@ -54,6 +71,7 @@ function processTakeProfits(poolId, results) {
     var pos = entry.pos;
     var data = results[pos.ticker];
     if (!data || !data.price || pos.entryPrice <= 0) return;
+    if (tickers.isAlertOnly(pos.ticker)) return;
 
     var gainPct = ((data.price - pos.entryPrice) / pos.entryPrice) * 100;
     var tierIdx = pos.lastProfitTier || 0;
@@ -115,6 +133,7 @@ function processTicker(poolId, data, livePrices) {
     }
 
     if (alreadyInTicker) return;
+    if (tickers.isAlertOnly(ticker)) return;
     if (!paper.hasPosition(poolId, ticker, level.key)) {
       var riskUsd = paper.getPositionSizeUSD(poolId, livePrices);
       var shares = Math.floor(riskUsd / data.price);
@@ -147,6 +166,7 @@ function runPoolScan(poolId, allResults, marketOpen) {
     if (r && r.price) livePrices[r.ticker] = { price: r.price };
   });
 
+  flattenAlertOnlyPositions(poolId, results);
   var totalExits = processStopLosses(poolId, results);
   var totalTakeProfits = processTakeProfits(poolId, results);
 
