@@ -334,6 +334,16 @@ async function main() {
     assert.ok(spxAt < spyAt && spyAt < nvdaAt && nvdaAt < xlbAt && xlbAt < xlyAt);
     assert.ok(watch.indexOf("$AAPL") !== -1);
     assert.ok(watch.indexOf("$XLU") !== -1);
+    var aligned = watch.replace(/```/g, "").split("\n").filter(function (line) {
+      return line.indexOf("21D:") !== -1;
+    });
+    assert.ok(aligned.length >= 10);
+    var col21 = aligned[0].indexOf("21D:");
+    var col55 = aligned[0].indexOf("55D:");
+    aligned.forEach(function (line) {
+      assert.strictEqual(line.indexOf("21D:"), col21, "21D: drifted: " + line);
+      assert.strictEqual(line.indexOf("55D:"), col55, "55D: drifted: " + line);
+    });
     main.fields.filter(function (f) { return f.name.indexOf("Watchlist") === 0; }).forEach(function (f) {
       assert.ok(f.value.length <= 1024, "embed field too long: " + f.value.length);
     });

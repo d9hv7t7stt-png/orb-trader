@@ -103,16 +103,28 @@ function levelValue(scanRow, key) {
   return found && found.value != null ? found.value : null;
 }
 
+var COL_TICK = 7;
+var COL_PX = 10;
+var COL_SHARES = 7;
+var COL_PNL = 12;
+var COL_PCT = 8;
+
 function padRight(text, width) {
   text = String(text);
-  if (text.length > width) return text.slice(0, width);
-  return text.padEnd(width);
+  return text.length >= width ? text : text.padEnd(width);
 }
 
 function padLeft(text, width) {
   text = String(text);
-  if (text.length > width) return text.slice(0, width);
-  return text.padStart(width);
+  return text.length >= width ? text : text.padStart(width);
+}
+
+function tickerCol(label) {
+  return padRight(label, COL_TICK);
+}
+
+function priceCol(value) {
+  return padLeft(typeof value === "string" ? value : formatMaPrice(value), COL_PX);
 }
 
 function fieldsFromCodeLines(baseName, lines, header) {
@@ -199,25 +211,25 @@ function buildSpaceDcWatchlistFields(livePrices, scanResults) {
       var pct = pos.entryPrice ? ((mark - pos.entryPrice) / pos.entryPrice) * 100 : 0;
       var pnlStr = (pnl > 0 ? "+" : "") + formatMoney(pnl);
       lines.push(
-        padRight("$" + ticker, 6)
-          + "  " + padLeft(formatMaPrice(close), 10)
-          + "  " + padLeft(pos.shares + " sh", 7)
-          + "  " + padLeft(formatMoney(pos.entryPrice), 10)
-          + "  " + padLeft(pnlStr, 12)
-          + "  " + padLeft("(" + formatPct(pct) + ")", 8)
+        tickerCol("$" + ticker)
+          + "  " + priceCol(close)
+          + "  " + padLeft(pos.shares + " sh", COL_SHARES)
+          + "  " + priceCol(formatMoney(pos.entryPrice))
+          + "  " + padLeft(pnlStr, COL_PNL)
+          + "  " + padLeft("(" + formatPct(pct) + ")", COL_PCT)
       );
     } else {
-      lines.push(padRight("$" + ticker, 6) + "  " + padLeft(formatMaPrice(close), 10) + "  " + padLeft("0 sh", 7));
+      lines.push(tickerCol("$" + ticker) + "  " + priceCol(close) + "  " + padLeft("0 sh", COL_SHARES));
     }
   });
-  lines.push(padRight("$CASH", 6) + "  " + padLeft(formatMoney(p.cash), 10));
+  lines.push(tickerCol("$CASH") + "  " + priceCol(formatMoney(p.cash)));
   spaceDcBook.SOLD.forEach(function (sold) {
-    lines.push(padRight("$" + sold.ticker, 6) + "  Sold @ $54");
+    lines.push(tickerCol("$" + sold.ticker) + "  Sold @ $54");
   });
   return fieldsFromCodeLines(
     "Watchlist",
     lines,
-    padRight("TICK", 6) + "  " + padLeft("CLOSE", 10) + "  " + padLeft("SHARES", 7) + "  " + padLeft("ENTRY", 10) + "  " + padLeft("P&L", 12) + "  " + padLeft("%", 8)
+    tickerCol("TICK") + "  " + padLeft("CLOSE", COL_PX) + "  " + padLeft("SHARES", COL_SHARES) + "  " + padLeft("ENTRY", COL_PX) + "  " + padLeft("P&L", COL_PNL) + "  " + padLeft("%", COL_PCT)
   );
 }
 
@@ -226,10 +238,10 @@ function buildMainWatchlistFields(scanResults) {
   scanResults = scanResults || {};
   var lines = tickersMod.getMainBriefingTickers().map(function (ticker) {
     var row = scanResults[ticker] || {};
-    return padRight("$" + tickersMod.getDisplayTicker(ticker), 6)
-      + "  " + padLeft(formatMaPrice(priorClose(row, null)), 10)
-      + "  21D: " + padLeft(formatMaPrice(levelValue(row, "d_ema21")), 10)
-      + "  55D: " + padLeft(formatMaPrice(levelValue(row, "d_sma55")), 10);
+    return tickerCol("$" + tickersMod.getDisplayTicker(ticker))
+      + "  " + priceCol(priorClose(row, null))
+      + "  21D: " + priceCol(levelValue(row, "d_ema21"))
+      + "  55D: " + priceCol(levelValue(row, "d_sma55"));
   });
   return fieldsFromCodeLines("Watchlist", lines);
 }
