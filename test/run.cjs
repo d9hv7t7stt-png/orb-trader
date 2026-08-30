@@ -304,34 +304,27 @@ async function main() {
       var label = tickers.getDisplayTicker(t);
       assert.ok(watch.indexOf(label) !== -1, "missing " + label);
     });
-    assert.ok(watch.indexOf("```") !== -1, "monospace sheet");
-    assert.ok(watch.indexOf("│") !== -1 && watch.indexOf("┼") !== -1, "row/column lines");
-    assert.ok(watch.indexOf("TICK") !== -1 && watch.indexOf("CLOSE") !== -1);
-    assert.ok(watch.indexOf("SPX") !== -1);
+    assert.ok(watch.indexOf("```") === -1);
+    assert.ok(watch.indexOf("│") === -1 && watch.indexOf("┼") === -1);
+    assert.ok(watch.indexOf("$SPX - $7,680.00 - 21 $7,669.00 - 55 $7,400.00") !== -1);
     assert.ok(watch.indexOf("SPXW") === -1);
     assert.ok(watch.indexOf("21-Week") === -1);
     assert.ok(watch.indexOf("200-Day") === -1);
     assert.ok(watch.indexOf("DRAM") === -1);
-    assert.ok(watch.indexOf("$7,680.00") !== -1, "prior close");
-    assert.ok(watch.indexOf("$7,669.00") !== -1);
-    assert.ok(watch.indexOf("$7,400.00") !== -1);
-    var spxAt = watch.indexOf("SPX");
-    var spyAt = watch.indexOf("SPY");
-    var nvdaAt = watch.indexOf("NVDA");
-    var xlbAt = watch.indexOf("XLB");
-    var xlyAt = watch.indexOf("XLY");
+    var spxAt = watch.indexOf("$SPX");
+    var spyAt = watch.indexOf("$SPY");
+    var nvdaAt = watch.indexOf("$NVDA");
+    var xlbAt = watch.indexOf("$XLB");
+    var xlyAt = watch.indexOf("$XLY");
     assert.ok(spxAt < spyAt && spyAt < nvdaAt && nvdaAt < xlbAt && xlbAt < xlyAt);
-    assert.ok(watch.indexOf("AAPL") !== -1);
-    assert.ok(watch.indexOf("XLU") !== -1);
-    watch.split("\n").filter(function (l) { return l.indexOf("AAPL") !== -1; }).forEach(function (line) {
-      assert.ok(line.indexOf("│") !== -1);
-    });
+    assert.ok(watch.indexOf("$AAPL") !== -1);
+    assert.ok(watch.indexOf("$XLU") !== -1);
     main.fields.filter(function (f) { return f.name.indexOf("Watchlist") === 0; }).forEach(function (f) {
       assert.ok(f.value.length <= 1024, "embed field too long: " + f.value.length);
     });
   });
 
-  await test("Space DC Sunday uses the spreadsheet with close, 21/55, shares, entry, P&L", function () {
+  await test("Space DC Sunday uses $TICKER - close - shares - entry - P&L", function () {
     var stateMod = require("../utils/state");
     paper.resetPortfolio("space_dc");
     spaceDcBook.seedSpaceDcBook(true);
@@ -353,19 +346,12 @@ async function main() {
     }).find(function (e) { return e.title.indexOf("Space DC") !== -1; });
     var blob = space.fields.map(function (f) { return f.name + "\n" + f.value; }).join("\n");
     pools.SPACE_DC_TICKERS.forEach(function (t) {
-      assert.ok(blob.indexOf(t) !== -1, "missing " + t);
+      assert.ok(blob.indexOf("$" + t + " - ") !== -1, "missing $" + t);
     });
-    assert.ok(blob.indexOf("```") !== -1 && blob.indexOf("│") !== -1 && blob.indexOf("┼") !== -1);
-    assert.ok(blob.indexOf("TICK") !== -1 && blob.indexOf("CLOSE") !== -1);
-    assert.ok(blob.indexOf("ENTRY") !== -1 && blob.indexOf("P&L") !== -1);
-    assert.ok(blob.indexOf("$49.25") !== -1);
-    assert.ok(blob.indexOf("$48.10") !== -1);
-    assert.ok(blob.indexOf("$47.20") !== -1);
-    assert.ok(blob.indexOf("$200.09") !== -1);
-    assert.ok(blob.indexOf("160") !== -1);
-    assert.ok(blob.indexOf("IRDM") !== -1);
-    assert.ok(blob.indexOf("Sold @ $54") !== -1);
-    assert.ok(blob.indexOf("CASH") !== -1);
+    assert.ok(blob.indexOf("```") === -1 && blob.indexOf("│") === -1);
+    assert.ok(blob.indexOf("$NVDA - $49.25 - 160 Shares - $200.09 - ") !== -1);
+    assert.ok(blob.indexOf("$CASH - ") !== -1);
+    assert.ok(blob.indexOf("$IRDM - Sold @ $54") !== -1);
     assert.ok(blob.indexOf("21-Day") === -1);
     assert.ok(!space.fields.some(function (f) { return f.name === "Near MA" || f.name === "Cash & sold"; }));
     space.fields.filter(function (f) { return f.name.indexOf("Watchlist") === 0; }).forEach(function (f) {
