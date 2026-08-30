@@ -4,142 +4,299 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Argus">
 <meta name="theme-color" content="#00e5a0">
 <link rel="manifest" href="/manifest.json">
-<title>Argus Stock Trader</title>
+<title>Argus</title>
 <style>
 :root {
-  --bg:#030406; --surface:#0a0d12; --surface2:#111620; --border:rgba(255,255,255,0.07);
+  --bg:#030406; --surface:#0a0d12; --surface2:#111620; --surface3:#171d28;
+  --border:rgba(255,255,255,0.07); --border2:rgba(255,255,255,0.12);
   --green:#00e5a0; --red:#ff4d6a; --amber:#f5a623; --blue:#4da6ff;
-  --white:#eef3f8; --dim:rgba(238,243,248,0.45); --mono:ui-monospace,'Courier New',monospace;
-  --nav-h:58px; --safe-b:env(safe-area-inset-bottom,0px);
+  --white:#eef3f8; --dim:rgba(238,243,248,0.45);
+  --mono:ui-monospace,'SF Mono','Courier New',monospace;
+  --nav-h:56px; --safe-b:env(safe-area-inset-bottom,0px);
 }
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:var(--bg);color:var(--white);font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:14px;padding-bottom:calc(var(--nav-h) + var(--safe-b) + 12px)}
-.app{max-width:1280px;margin:0 auto}
-.header{position:sticky;top:0;z-index:100;background:rgba(10,13,18,0.95);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:12px 16px;display:flex;justify-content:space-between;align-items:center}
-.logo{font-weight:800;font-size:15px;color:var(--green);letter-spacing:0.05em}
-.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;padding:12px 16px 0}
-@media(min-width:640px){.stats{grid-template-columns:repeat(5,1fr)}}
-.stat{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px}
+html{-webkit-text-size-adjust:100%}
+body{
+  background:var(--bg);color:var(--white);
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  font-size:14px;line-height:1.45;
+  padding-bottom:calc(var(--nav-h) + var(--safe-b) + 8px);
+}
+.app{max-width:960px;margin:0 auto}
+
+/* Header */
+.header{
+  position:sticky;top:0;z-index:100;
+  background:rgba(10,13,18,0.94);backdrop-filter:blur(14px);
+  border-bottom:1px solid var(--border);
+  padding:14px 16px 12px;
+}
+.header-row{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.logo{font-weight:800;font-size:16px;color:var(--green);letter-spacing:0.04em;white-space:nowrap}
+.logo-sub{font-size:11px;color:var(--dim);font-weight:500;margin-top:2px;font-family:var(--mono)}
+.header-actions{display:flex;gap:8px;flex-shrink:0}
+.btn{
+  font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:0.06em;
+  text-transform:uppercase;border:1px solid var(--border2);background:var(--surface2);
+  color:var(--white);padding:8px 12px;border-radius:8px;cursor:pointer;
+}
+.btn:active{transform:scale(0.98)}
+.btn.primary{border-color:var(--green);color:var(--green);background:rgba(0,229,160,0.08)}
+.pool-tabs{display:flex;gap:6px;margin-top:12px}
+.pool-tab{
+  font-family:var(--mono);font-size:10px;letter-spacing:0.06em;text-transform:uppercase;
+  background:transparent;border:1px solid var(--border);color:var(--dim);
+  padding:6px 14px;border-radius:20px;cursor:pointer;transition:all .15s;
+}
+.pool-tab.active{border-color:var(--green);color:var(--green);background:rgba(0,229,160,0.08)}
+
+/* Stats */
+.stats{
+  display:grid;grid-template-columns:repeat(2,1fr);gap:10px;
+  padding:14px 16px 0;
+}
+@media(min-width:640px){.stats{grid-template-columns:repeat(4,1fr)}}
+.stat{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:12px;padding:12px 14px;
+}
 .stat-l{font-family:var(--mono);font-size:9px;letter-spacing:0.1em;text-transform:uppercase;color:var(--dim)}
-.stat-v{font-size:17px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums}
+.stat-v{font-size:20px;font-weight:700;margin-top:3px;font-variant-numeric:tabular-nums}
 .stat-v.pos{color:var(--green)}.stat-v.neg{color:var(--red)}
-.main{padding:12px 16px}
-.page{display:none}.page.active{display:block}
-.section{font-family:var(--mono);font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:var(--dim);margin:0 0 8px 2px}
-.btn{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;border:1px solid var(--border);background:var(--surface2);color:var(--white);padding:8px 12px;border-radius:8px;cursor:pointer}
-.btn.primary{border-color:var(--green);color:var(--green);background:rgba(0,229,160,0.1)}
+.stat-v.sm{font-size:15px}
+
+/* Layout */
+.main{padding:14px 16px 0}
+.page{display:none}.page.active{display:block;animation:fade .2s ease}
+@keyframes fade{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+
+/* Near signals strip */
+.signals-strip{
+  background:linear-gradient(135deg,rgba(77,166,255,0.08),rgba(0,229,160,0.04));
+  border:1px solid rgba(77,166,255,0.22);border-radius:14px;
+  padding:14px 16px;margin-bottom:14px;
+}
+.signals-head{
+  display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;
+}
+.signals-title{font-family:var(--mono);font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:var(--blue);font-weight:600}
+.signals-count{font-family:var(--mono);font-size:11px;color:var(--dim)}
+.signal-groups{display:flex;flex-direction:column;gap:8px}
+.signal-group{display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap}
+.signal-ticker{
+  font-weight:800;font-size:13px;min-width:44px;padding-top:4px;font-variant-numeric:tabular-nums;
+}
+.signal-chips{display:flex;flex-wrap:wrap;gap:6px;flex:1}
+.chip{
+  font-family:var(--mono);font-size:10px;font-weight:600;
+  padding:4px 10px;border-radius:20px;white-space:nowrap;
+}
+.chip.near{color:var(--blue);background:rgba(77,166,255,0.14);border:1px solid rgba(77,166,255,0.28)}
+.chip.watch{color:var(--amber);background:rgba(245,166,35,0.1);border:1px solid rgba(245,166,35,0.25)}
+.chip.pos{color:var(--green);background:rgba(0,229,160,0.1);border:1px solid rgba(0,229,160,0.25)}
+
+/* Filters */
+.filter-bar{display:flex;gap:6px;margin-bottom:12px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px}
+.filter-bar::-webkit-scrollbar{display:none}
+.filter-btn{
+  font-family:var(--mono);font-size:10px;letter-spacing:0.04em;text-transform:uppercase;
+  background:var(--surface);border:1px solid var(--border);color:var(--dim);
+  padding:7px 14px;border-radius:20px;cursor:pointer;white-space:nowrap;flex-shrink:0;
+}
+.filter-btn.active{border-color:var(--green);color:var(--green);background:rgba(0,229,160,0.08)}
+.filter-btn .count{opacity:0.6;margin-left:4px}
+
+/* Scanner list */
+.scanner-list{display:flex;flex-direction:column;gap:8px}
+.scan-row{
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:12px 14px;display:flex;align-items:center;gap:12px;
+  transition:border-color .15s;
+}
+.scan-row.near{border-color:rgba(77,166,255,0.25)}
+.scan-row.watch-only{opacity:0.88}
+.scan-row.disabled{opacity:0.4}
+.scan-row.has-pos{border-color:rgba(0,229,160,0.2)}
+.scan-main{flex:1;min-width:0}
+.scan-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.scan-ticker{font-weight:800;font-size:15px;letter-spacing:-0.01em}
+.scan-price{font-weight:700;font-variant-numeric:tabular-nums;font-size:15px}
+.scan-meta{display:flex;align-items:center;gap:6px;margin-top:4px;flex-wrap:wrap}
+.scan-label{font-size:11px;color:var(--dim)}
+.badge-watch{
+  font-family:var(--mono);font-size:8px;font-weight:700;letter-spacing:0.08em;
+  text-transform:uppercase;color:var(--amber);background:rgba(245,166,35,0.1);
+  border:1px solid rgba(245,166,35,0.2);padding:2px 6px;border-radius:4px;
+}
+.badge-pos{
+  font-family:var(--mono);font-size:8px;font-weight:700;letter-spacing:0.08em;
+  text-transform:uppercase;color:var(--green);background:rgba(0,229,160,0.1);
+  border:1px solid rgba(0,229,160,0.2);padding:2px 6px;border-radius:4px;
+}
+.scan-signals{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.scan-signals .chip{font-size:9px;padding:3px 8px}
+.scan-clear{font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:4px}
+.scan-expand{
+  background:none;border:none;color:var(--dim);cursor:pointer;padding:4px;
+  font-size:16px;line-height:1;flex-shrink:0;
+}
+.scan-detail{
+  display:none;width:100%;margin-top:10px;padding-top:10px;
+  border-top:1px solid var(--border);
+}
+.scan-row.expanded .scan-detail{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
+@media(min-width:480px){.scan-row.expanded .scan-detail{grid-template-columns:repeat(3,1fr)}}
+.ma-item{
+  font-family:var(--mono);font-size:10px;color:var(--dim);
+  background:var(--surface2);border-radius:8px;padding:6px 8px;
+}
+.ma-item strong{color:var(--white);display:block;font-size:11px;margin-top:1px}
+.ma-item.near{background:rgba(77,166,255,0.1);border:1px solid rgba(77,166,255,0.2)}
+.ma-item.near strong{color:var(--blue)}
+
+.empty-state{
+  text-align:center;padding:32px 16px;color:var(--dim);
+  font-family:var(--mono);font-size:12px;
+}
+
+/* Panels */
+.section{font-family:var(--mono);font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:var(--dim);margin:0 0 10px 2px}
 .panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:12px;overflow:hidden}
-.panel-head{padding:10px 14px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.panel-head{padding:12px 16px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
 .panel-title{font-family:var(--mono);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--dim)}
-.panel-body{padding:14px}
-.near-banner{background:rgba(77,166,255,0.1);border:1px solid rgba(77,166,255,0.3);border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:12px}
-.near-item{padding:6px 0;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:11px}
-.near-item:last-child{border:none}
-.ticker-table{width:100%;border-collapse:collapse;font-size:12px}
-.ticker-table th{font-family:var(--mono);font-size:9px;letter-spacing:0.08em;text-transform:uppercase;color:var(--dim);text-align:left;padding:8px 6px;border-bottom:1px solid var(--border)}
-.ticker-table td{padding:8px 6px;border-bottom:1px solid var(--border);vertical-align:middle}
-.ticker-table tr.disabled{opacity:0.45}
-.ma-cell{font-family:var(--mono);font-size:10px}
-.ma-near{color:var(--blue);font-weight:700;background:rgba(77,166,255,0.12);border-radius:4px;padding:2px 4px}
+.panel-body{padding:14px 16px}
+
+/* Positions */
 .pos-grid{display:grid;gap:10px}
 @media(min-width:640px){.pos-grid{grid-template-columns:1fr 1fr}}
-.pos-card{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px}
-.pos-card h4{font-size:14px;margin-bottom:6px}
-.pos-meta{font-family:var(--mono);font-size:11px;color:var(--dim);line-height:1.7}
+.pos-card{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px}
+.pos-card h4{font-size:15px;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.pos-meta{font-family:var(--mono);font-size:11px;color:var(--dim);line-height:1.8}
 .pos-meta span{color:var(--white)}
-.log-box{max-height:280px;overflow-y:auto;font-family:var(--mono);font-size:11px;background:var(--bg);border:1px solid var(--border);border-radius:8px}
-.log-row{display:grid;grid-template-columns:48px 80px 1fr;gap:6px;padding:6px 8px;border-bottom:1px solid var(--border)}
+
+/* Log */
+.log-box{max-height:360px;overflow-y:auto;font-family:var(--mono);font-size:11px;background:var(--bg);border:1px solid var(--border);border-radius:10px}
+.log-row{display:grid;grid-template-columns:48px 72px 1fr;gap:8px;padding:8px 10px;border-bottom:1px solid var(--border)}
 .log-type{font-size:9px;font-weight:600;text-transform:uppercase}
 .log-type.STOCK_BUY,.log-type.MA_NEAR{color:var(--blue)}
 .log-type.STOP_LOSS{color:var(--red)}
 .log-type.TAKE_PROFIT{color:var(--amber)}
 .log-type.SCAN,.log-type.SCAN_DONE{color:var(--green)}
-.toggle{width:40px;height:24px;background:var(--surface2);border-radius:12px;border:1px solid var(--border);position:relative;cursor:pointer}
+
+/* Settings */
+.toggle{width:44px;height:26px;background:var(--surface3);border-radius:13px;border:1px solid var(--border2);position:relative;cursor:pointer;flex-shrink:0}
 .toggle.on{background:var(--green);border-color:var(--green)}
-.toggle::after{content:'';position:absolute;width:18px;height:18px;background:#fff;border-radius:50%;top:2px;left:2px;transition:left .2s}
-.toggle.on::after{left:18px}
-.toggle-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)}
-.rule{font-size:12px;color:var(--dim);line-height:1.75;margin-bottom:8px}
+.toggle::after{content:'';position:absolute;width:20px;height:20px;background:#fff;border-radius:50%;top:2px;left:2px;transition:left .2s}
+.toggle.on::after{left:20px}
+.toggle-row{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--border)}
+.toggle-row:last-child{border-bottom:none}
+.rule{font-size:13px;color:var(--dim);line-height:1.75;margin-bottom:8px}
 .rule strong{color:var(--white)}
-.bottom-nav{position:fixed;bottom:0;left:0;right:0;height:calc(var(--nav-h) + var(--safe-b));padding-bottom:var(--safe-b);background:rgba(10,13,18,0.96);border-top:1px solid var(--border);display:flex;z-index:200}
-.nav-btn{flex:1;background:none;border:none;color:var(--dim);font-family:var(--mono);font-size:9px;text-transform:uppercase;padding:10px 0;cursor:pointer}
+
+/* Nav */
+.bottom-nav{
+  position:fixed;bottom:0;left:0;right:0;z-index:200;
+  height:calc(var(--nav-h) + var(--safe-b));padding-bottom:var(--safe-b);
+  background:rgba(10,13,18,0.96);backdrop-filter:blur(14px);
+  border-top:1px solid var(--border);display:flex;
+}
+.nav-btn{
+  flex:1;background:none;border:none;color:var(--dim);
+  font-family:var(--mono);font-size:9px;letter-spacing:0.06em;text-transform:uppercase;
+  padding:10px 0;cursor:pointer;
+}
 .nav-btn.active{color:var(--green)}
-@media(min-width:768px){body{padding-bottom:0}.bottom-nav{display:none}.desktop-nav{display:flex!important;gap:4px;padding:0 16px;margin-top:8px;border-bottom:1px solid var(--border)}}
+@media(min-width:768px){body{padding-bottom:0}.bottom-nav{display:none}.desktop-nav{display:flex!important;gap:4px;padding:0 16px;margin-top:10px;border-bottom:1px solid var(--border)}}
 .desktop-nav{display:none}
-.dtab{font-family:var(--mono);font-size:10px;text-transform:uppercase;background:none;border:none;color:var(--dim);padding:10px 12px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+.dtab{font-family:var(--mono);font-size:10px;text-transform:uppercase;background:none;border:none;color:var(--dim);padding:10px 14px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
 .dtab.active{color:var(--green);border-bottom-color:var(--green)}
-.pool-tabs{display:flex;gap:6px;margin-top:8px}
-.pool-tab{font-family:var(--mono);font-size:9px;letter-spacing:0.08em;text-transform:uppercase;background:var(--surface2);border:1px solid var(--border);color:var(--dim);padding:6px 10px;border-radius:8px;cursor:pointer}
-.pool-tab.active{border-color:var(--green);color:var(--green);background:rgba(0,229,160,0.08)}
+
+.toast{
+  position:fixed;bottom:calc(var(--nav-h) + var(--safe-b) + 16px);left:50%;
+  transform:translateX(-50%);background:var(--surface2);border:1px solid var(--green);
+  color:var(--green);font-family:var(--mono);font-size:11px;padding:10px 18px;
+  border-radius:10px;z-index:9999;white-space:nowrap;
+}
 </style>
 </head>
 <body>
 <div class="app">
   <header class="header">
-    <div>
-      <div class="logo" id="header-logo">👁 ARGUS STOCK · PAPER</div>
-      <div class="pool-tabs" id="pool-tabs"></div>
+    <div class="header-row">
+      <div>
+        <div class="logo" id="header-logo">ARGUS</div>
+        <div class="logo-sub" id="header-sub">Paper trading</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn" onclick="runScan()">Scan</button>
+        <button class="btn primary" onclick="refresh()">Refresh</button>
+      </div>
     </div>
-    <div style="display:flex;gap:8px">
-      <button class="btn" onclick="runScan()">Scan Now</button>
-      <button class="btn primary" onclick="refresh()">Refresh</button>
-    </div>
+    <div class="pool-tabs" id="pool-tabs"></div>
   </header>
+
   <nav class="desktop-nav" id="desktop-nav">
     <button class="dtab active" data-p="scanner">Scanner</button>
     <button class="dtab" data-p="positions">Positions</button>
     <button class="dtab" data-p="watchlist">Watchlist</button>
-    <button class="dtab" data-p="strategy">Strategy</button>
+    <button class="dtab" data-p="strategy">Rules</button>
     <button class="dtab" data-p="log">Log</button>
   </nav>
+
   <div class="stats">
     <div class="stat"><div class="stat-l">Equity</div><div class="stat-v" id="s-equity">—</div></div>
-    <div class="stat"><div class="stat-l">Cash</div><div class="stat-v" id="s-cash">—</div></div>
-    <div class="stat"><div class="stat-l">Unrealized</div><div class="stat-v" id="s-unreal">—</div></div>
     <div class="stat"><div class="stat-l">Daily P&L</div><div class="stat-v" id="s-daily">—</div></div>
-    <div class="stat"><div class="stat-l">Near MA (1%)</div><div class="stat-v" id="s-near">0</div></div>
-    <div class="stat"><div class="stat-l">Next Entry (2%)</div><div class="stat-v" id="s-size" style="font-size:15px">—</div></div>
+    <div class="stat"><div class="stat-l">Open</div><div class="stat-v" id="s-open">0</div></div>
+    <div class="stat"><div class="stat-l">Near MA</div><div class="stat-v" id="s-near">0</div></div>
   </div>
+
   <main class="main">
     <div class="page active" id="page-scanner">
-      <div id="near-banner"></div>
-      <div class="section">Full watchlist · Yahoo Finance</div>
-      <div class="panel"><div class="panel-body" style="padding:0;overflow-x:auto">
-        <table class="ticker-table" id="scanner-table"><thead><tr>
-          <th>Ticker</th><th>Price</th><th>21D EMA</th><th>55D SMA</th><th>200D SMA</th><th>21W EMA</th><th>50W SMA</th>
-        </tr></thead><tbody></tbody></table>
-      </div></div>
+      <div id="signals-strip"></div>
+      <div class="filter-bar" id="filter-bar">
+        <button class="filter-btn active" data-f="all" onclick="setFilter('all')">All</button>
+        <button class="filter-btn" data-f="near" onclick="setFilter('near')">Near MA</button>
+        <button class="filter-btn" data-f="watch" onclick="setFilter('watch')">Sectors</button>
+        <button class="filter-btn" data-f="positions" onclick="setFilter('positions')">Held</button>
+      </div>
+      <div class="scanner-list" id="scanner-list"></div>
     </div>
+
     <div class="page" id="page-positions">
-      <div class="section">Open paper positions</div>
+      <div class="section">Open positions</div>
       <div class="pos-grid" id="pos-grid"></div>
     </div>
+
     <div class="page" id="page-watchlist">
-      <div class="panel"><div class="panel-head"><span class="panel-title">Enable / disable tickers</span></div>
-      <div class="panel-body" id="watchlist-toggles"></div></div>
+      <div class="panel">
+        <div class="panel-head"><span class="panel-title">Ticker toggles</span></div>
+        <div class="panel-body" id="watchlist-toggles"></div>
+      </div>
     </div>
+
     <div class="page" id="page-strategy">
-      <div class="panel"><div class="panel-head"><span class="panel-title">How it works</span></div>
-      <div class="panel-body" id="strategy-body"></div></div>
-      <div class="panel"><div class="panel-head"><span class="panel-title">Discord role setup (examples)</span></div>
-      <div class="panel-body" id="discord-roles"></div></div>
-      <div class="panel"><div class="panel-head"><span class="panel-title">Roadmap</span></div>
-      <div class="panel-body">
-        <div class="rule">• <strong>Live broker</strong> — connect Alpaca/IBKR for real stock orders (paper stays default)</div>
-        <div class="rule">• <strong>Volume filter</strong> — only enter when volume &gt; 20-day average</div>
-        <div class="rule">• <strong>RSI filter</strong> — skip entries if RSI &gt; 70 on daily</div>
-        <div class="rule">• <strong>Sector limits</strong> — max % of portfolio per sector ETF</div>
-        <div class="rule">• <strong>Earnings blackout</strong> — skip entries ±3 days from earnings</div>
-      </div></div>
+      <div class="panel">
+        <div class="panel-head"><span class="panel-title">Strategy</span></div>
+        <div class="panel-body" id="strategy-body"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><span class="panel-title">Discord roles</span></div>
+        <div class="panel-body" id="discord-roles"></div>
+      </div>
     </div>
+
     <div class="page" id="page-log">
-      <div class="panel"><div class="panel-head"><span class="panel-title">Activity</span></div>
-      <div class="panel-body"><div class="log-box" id="log-box"></div></div></div>
+      <div class="panel">
+        <div class="panel-head"><span class="panel-title">Activity</span></div>
+        <div class="panel-body"><div class="log-box" id="log-box"></div></div>
+      </div>
     </div>
   </main>
 </div>
+
 <nav class="bottom-nav">
   <button class="nav-btn active" data-p="scanner" onclick="showPage('scanner',this)">Scan</button>
   <button class="nav-btn" data-p="positions" onclick="showPage('positions',this)">Pos</button>
@@ -147,18 +304,26 @@ body{background:var(--bg);color:var(--white);font-family:-apple-system,BlinkMacS
   <button class="nav-btn" data-p="strategy" onclick="showPage('strategy',this)">Rules</button>
   <button class="nav-btn" data-p="log" onclick="showPage('log',this)">Log</button>
 </nav>
+
 <script>
 const BASE = window.location.origin;
 let data = null;
 let activePool = 'main';
+let scanFilter = 'all';
+let expandedTicker = null;
 let apiKey = sessionStorage.getItem('argus_api_key') || '';
+
+const MA_SHORT = {
+  '21-Day EMA': '21D', '55-Day SMA': '55D', '200-Day SMA': '200D',
+  '21-Week EMA': '21W', '50-Week SMA': '50W'
+};
 
 async function apiFetch(url, opts = {}) {
   opts.headers = opts.headers || {};
   if (apiKey) opts.headers['x-api-key'] = apiKey;
   const res = await fetch(url, opts);
   if (res.status === 401) {
-    const entered = prompt('API key required for this action (set API_KEY in Railway):');
+    const entered = prompt('API key required (set API_KEY in Railway):');
     if (entered) {
       apiKey = entered;
       sessionStorage.setItem('argus_api_key', apiKey);
@@ -174,20 +339,15 @@ function setActivePool(poolId) {
   document.querySelectorAll('.pool-tab').forEach(el => {
     el.classList.toggle('active', el.dataset.pool === poolId);
   });
-  if (data && data.pools) {
-    const p = data.pools.find(x => x.poolId === poolId) || data.pool;
-    if (p) {
-      document.getElementById('header-logo').textContent = '👁 ARGUS · ' + p.poolLabel + ' · $' + Math.round(p.startingBalance).toLocaleString('en-US');
-    }
-  }
   render();
 }
 
-function renderPoolTabs() {
-  if (!data || !data.pools) return;
-  document.getElementById('pool-tabs').innerHTML = data.pools.map(p =>
-    `<button class="pool-tab ${p.poolId === activePool ? 'active' : ''}" data-pool="${p.poolId}" onclick="setActivePool('${p.poolId}')">${p.poolLabel}</button>`
-  ).join('');
+function setFilter(f) {
+  scanFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(el => {
+    el.classList.toggle('active', el.dataset.f === f);
+  });
+  renderScanner();
 }
 
 function showPage(p, btn) {
@@ -200,105 +360,222 @@ function showPage(p, btn) {
 document.querySelectorAll('.dtab').forEach(b => b.addEventListener('click', () => showPage(b.dataset.p, b)));
 
 function toast(m) {
-  const el = document.createElement('div'); el.className = 'toast'; el.textContent = m;
-  document.body.appendChild(el); setTimeout(() => el.remove(), 2200);
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = m;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2200);
 }
 
-function fmt(n, d=2) { return n == null || isNaN(n) ? '—' : '$' + n.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}); }
-function fmtPct(n) { return n == null ? '—' : (n>=0?'+':'') + n.toFixed(2) + '%'; }
+function fmt(n, d = 2) {
+  return n == null || isNaN(n) ? '—' : '$' + n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+}
 
-function maCell(level) {
-  if (!level || level.value == null) return '<span class="ma-cell">—</span>';
-  const cls = level.near ? 'ma-near' : 'ma-cell';
-  return `<span class="${cls}">${level.value.toFixed(2)}<br><small>${level.proximity_pct}%</small></span>`;
+function fmtPct(n) {
+  return n == null ? '' : (n >= 0 ? '+' : '') + n.toFixed(1) + '%';
+}
+
+function isAlertOnly(ticker) {
+  return (data && data.alert_only || []).includes(ticker);
+}
+
+function shortMa(label) {
+  return MA_SHORT[label] || label.replace(/Day|Week|SMA|EMA/g, '').trim();
+}
+
+function groupNearHits(hits) {
+  const map = {};
+  hits.forEach(h => {
+    if (!map[h.ticker]) map[h.ticker] = { ticker: h.ticker, price: h.price, levels: [] };
+    map[h.ticker].levels.push(h);
+  });
+  return Object.values(map);
+}
+
+function renderSignalsStrip(nearHits) {
+  const el = document.getElementById('signals-strip');
+  if (!nearHits.length) {
+    el.innerHTML = '';
+    return;
+  }
+  const groups = groupNearHits(nearHits);
+  el.innerHTML = `
+    <div class="signals-strip">
+      <div class="signals-head">
+        <span class="signals-title">Near moving average</span>
+        <span class="signals-count">${groups.length} ticker${groups.length !== 1 ? 's' : ''}</span>
+      </div>
+      <div class="signal-groups">
+        ${groups.map(g => `
+          <div class="signal-group">
+            <span class="signal-ticker">${g.ticker}</span>
+            <div class="signal-chips">
+              ${g.levels.map(l => {
+                const cls = isAlertOnly(g.ticker) ? 'watch' : 'near';
+                return `<span class="chip ${cls}">${shortMa(l.level)} ${l.proximity_pct}%</span>`;
+              }).join('')}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>`;
+}
+
+function toggleExpand(ticker) {
+  expandedTicker = expandedTicker === ticker ? null : ticker;
+  renderScanner();
+}
+
+function renderScanner() {
+  if (!data) return;
+  const poolData = (data.pools && data.pools.find(x => x.poolId === activePool)) || data.pool || data;
+  const poolState = poolData.state || data.state;
+  const poolTickers = poolData.tickers || data.tickers || [];
+  const nearHits = poolData.near_hits || data.near_hits || [];
+  const positions = poolData.positions || data.positions || [];
+  const scan = poolState.scanResults || {};
+  const posTickers = new Set(positions.map(p => p.ticker));
+  const nearTickers = new Set(nearHits.map(h => h.ticker));
+
+  document.getElementById('s-near').textContent = groupNearHits(nearHits).length;
+
+  const filterLabels = { all: 'All', near: 'Near MA', watch: 'Sectors', positions: 'Held' };
+  document.querySelectorAll('.filter-btn').forEach(el => {
+    const f = el.dataset.f;
+    let count = poolTickers.length;
+    if (f === 'near') count = nearTickers.size;
+    else if (f === 'watch') count = poolTickers.filter(isAlertOnly).length;
+    else if (f === 'positions') count = posTickers.size;
+    el.innerHTML = filterLabels[f] + (f !== 'all' ? ` <span class="count">${count}</span>` : '');
+  });
+
+  renderSignalsStrip(nearHits);
+
+  const filtered = poolTickers.filter(t => {
+    if (scanFilter === 'near') return nearTickers.has(t);
+    if (scanFilter === 'watch') return isAlertOnly(t);
+    if (scanFilter === 'positions') return posTickers.has(t);
+    return true;
+  });
+
+  const list = document.getElementById('scanner-list');
+  if (!filtered.length) {
+    list.innerHTML = `<div class="empty-state">No tickers match this filter</div>`;
+    return;
+  }
+
+  list.innerHTML = filtered.map(t => {
+    const r = scan[t];
+    const en = poolState.tickers[t] !== false;
+    const watch = isAlertOnly(t);
+    const hasPos = posTickers.has(t);
+    const nearLevels = (r && r.levels) ? r.levels.filter(l => l.near) : [];
+    const isNear = nearLevels.length > 0;
+    const expanded = expandedTicker === t;
+
+    if (!r) {
+      return `<div class="scan-row ${en ? '' : 'disabled'}">
+        <div class="scan-main"><div class="scan-top"><span class="scan-ticker">${t}</span><span class="scan-price" style="color:var(--dim)">…</span></div></div>
+      </div>`;
+    }
+
+    const levelMap = {};
+    (r.levels || []).forEach(l => { levelMap[l.key] = l; });
+
+    return `<div class="scan-row ${isNear ? 'near' : ''} ${watch ? 'watch-only' : ''} ${hasPos ? 'has-pos' : ''} ${en ? '' : 'disabled'} ${expanded ? 'expanded' : ''}">
+      <div class="scan-main">
+        <div class="scan-top">
+          <span class="scan-ticker">${t}</span>
+          <span class="scan-price">${fmt(r.price)}</span>
+        </div>
+        <div class="scan-meta">
+          ${watch ? '<span class="badge-watch">Watch only</span>' : ''}
+          ${hasPos ? '<span class="badge-pos">Position</span>' : ''}
+          ${!en ? '<span class="scan-label">Disabled</span>' : ''}
+        </div>
+        ${isNear ? `<div class="scan-signals">${nearLevels.map(l =>
+          `<span class="chip ${watch ? 'watch' : 'near'}">${shortMa(l.label)} ${l.proximity_pct}%</span>`
+        ).join('')}</div>` : (!expanded ? '<div class="scan-clear">No MA signal</div>' : '')}
+        <div class="scan-detail">
+          ${(data.ma_levels || []).map(ml => {
+            const l = levelMap[ml.key];
+            if (!l || l.value == null) return `<div class="ma-item"><span>${shortMa(ml.label)}</span><strong>—</strong></div>`;
+            return `<div class="ma-item ${l.near ? 'near' : ''}"><span>${shortMa(ml.label)}</span><strong>${l.value.toFixed(2)} <small style="opacity:0.7">${l.proximity_pct}%</small></strong></div>`;
+          }).join('')}
+        </div>
+      </div>
+      <button class="scan-expand" onclick="toggleExpand('${t}')" aria-label="Details">${expanded ? '▴' : '▾'}</button>
+    </div>`;
+  }).join('');
 }
 
 function render() {
   if (!data) return;
-  renderPoolTabs();
+
+  if (data.pools) {
+    document.getElementById('pool-tabs').innerHTML = data.pools.map(p =>
+      `<button class="pool-tab ${p.poolId === activePool ? 'active' : ''}" data-pool="${p.poolId}" onclick="setActivePool('${p.poolId}')">${p.poolLabel}</button>`
+    ).join('');
+  }
+
   const poolData = (data.pools && data.pools.find(x => x.poolId === activePool)) || data.pool || data;
   const p = poolData.portfolio || data.portfolio;
   const poolState = poolData.state || data.state;
   const poolTickers = poolData.tickers || data.tickers;
-  const nearHits = poolData.near_hits || data.near_hits || [];
   const positions = poolData.positions || data.positions || [];
   const pnl = poolData.pnl || data.pnl;
-  const tradeSize = poolData.trade_size != null ? poolData.trade_size : data.trade_size;
 
-  document.getElementById('header-logo').textContent = '👁 ARGUS · ' + (poolData.poolLabel || 'Main') + ' · $' + Math.round(p.startingBalance).toLocaleString('en-US');
+  document.getElementById('header-logo').textContent = 'ARGUS · ' + (poolData.poolLabel || 'Main');
+  document.getElementById('header-sub').textContent = fmt(p.startingBalance, 0) + ' paper · ' + (poolTickers || []).length + ' tickers';
+
   document.getElementById('s-equity').textContent = fmt(p.equity, 0);
-  document.getElementById('s-cash').textContent = fmt(p.cash, 0);
-  const u = document.getElementById('s-unreal');
-  u.textContent = fmt(p.unrealized, 0);
-  u.className = 'stat-v' + (p.unrealized > 0 ? ' pos' : p.unrealized < 0 ? ' neg' : '');
   const d = document.getElementById('s-daily');
   d.textContent = pnl && pnl.daily != null ? fmt(pnl.daily, 0) : '—';
   d.className = 'stat-v' + (pnl && pnl.daily > 0 ? ' pos' : pnl && pnl.daily < 0 ? ' neg' : '');
-  document.getElementById('s-near').textContent = nearHits.length;
-  document.getElementById('s-size').textContent = tradeSize ? fmt(tradeSize, 0) : '—';
+  document.getElementById('s-open').textContent = positions.length;
 
-  const banner = document.getElementById('near-banner');
-  if (nearHits.length) {
-    banner.className = 'near-banner';
-    banner.innerHTML = '<strong style="color:var(--blue)">Within 1% of MA</strong><br>' +
-      nearHits.map(h => `<div class="near-item">${h.ticker} @ ${fmt(h.price)} → ${h.level} (${h.proximity_pct}% away, MA ${fmt(h.ma)})</div>`).join('');
-  } else banner.innerHTML = '';
-
-  const scan = poolState.scanResults || {};
-  const tbody = document.querySelector('#scanner-table tbody');
-  tbody.innerHTML = (poolTickers || []).map(t => {
-    const r = scan[t];
-    const en = poolState.tickers[t] !== false;
-    if (!r) return `<tr class="${en?'':'disabled'}"><td><strong>${t}</strong></td><td colspan="6" style="color:var(--dim)">Loading…</td></tr>`;
-    const levels = {};
-    (r.levels||[]).forEach(l => levels[l.key] = l);
-    return `<tr class="${en?'':'disabled'}"><td><strong>${t}</strong></td><td>${fmt(r.price)}</td>
-      <td>${maCell(levels.d_ema21)}</td><td>${maCell(levels.d_sma55)}</td><td>${maCell(levels.d_sma200)}</td>
-      <td>${maCell(levels.w_ema21)}</td><td>${maCell(levels.w_sma50)}</td></tr>`;
-  }).join('');
+  renderScanner();
 
   document.getElementById('pos-grid').innerHTML = positions.length
-    ? positions.map(p => `<div class="pos-card"><h4>${p.ticker} · ${p.maLabel}</h4>
-      <div class="pos-meta">Shares <span>${p.shares}</span>${p.totalShares ? ' / ' + p.totalShares : ''} · Entry <span>${fmt(p.entryPrice)}</span> · Now <span>${fmt(p.currentPrice)}</span><br>
-      P&L <span style="color:${p.pnl>=0?'var(--green)':'var(--red)'}">${fmt(p.pnl,0)} (${fmtPct(p.pct)})</span>${p.lastProfitTier ? ' · TP tier ' + p.lastProfitTier : ''}</div></div>`).join('')
-    : '<p style="color:var(--dim);font-family:var(--mono);font-size:12px">No open positions — scanner will paper-buy when price nears a MA</p>';
+    ? positions.map(pos => `<div class="pos-card">
+        <h4>${pos.ticker}<span class="chip near" style="font-size:9px">${pos.maLabel || 'MA entry'}</span></h4>
+        <div class="pos-meta">
+          ${pos.shares} shares · Entry <span>${fmt(pos.entryPrice)}</span> · Now <span>${fmt(pos.currentPrice)}</span><br>
+          P&L <span style="color:${pos.pnl >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(pos.pnl, 0)} (${fmtPct(pos.pct)})</span>
+          ${pos.lastProfitTier ? ' · TP tier ' + pos.lastProfitTier : ''}
+        </div>
+      </div>`).join('')
+    : '<div class="empty-state">No open positions<br><small style="margin-top:6px;display:block">Buys trigger when price nears a moving average</small></div>';
 
-  document.getElementById('watchlist-toggles').innerHTML = (poolTickers||[]).map(t =>
-    `<div class="toggle-row"><div><strong>${t}</strong></div>
-    <button class="toggle ${poolState.tickers[t]!==false?'on':''}" onclick="toggle('${t}',${poolState.tickers[t]===false})"></button></div>`
+  document.getElementById('watchlist-toggles').innerHTML = (poolTickers || []).map(t =>
+    `<div class="toggle-row">
+      <div><strong>${t}</strong>${isAlertOnly(t) ? ' <span class="badge-watch">Watch</span>' : ''}</div>
+      <button class="toggle ${poolState.tickers[t] !== false ? 'on' : ''}" onclick="toggle('${t}',${poolState.tickers[t] === false})"></button>
+    </div>`
   ).join('');
 
   const s = data.strategy;
   document.getElementById('strategy-body').innerHTML = `
-    <div class="rule"><strong>Data:</strong> ${s.data_source} — scans every 30 min + after the bell (4:05 PM ET)</div>
+    <div class="rule"><strong>Data:</strong> ${s.data_source} — scans every 30 min + 4:05 PM ET</div>
     <div class="rule"><strong>Entry:</strong> ${s.entry}</div>
-    <div class="rule"><strong>Sector ETFs:</strong> XLC, XLY, XLP, XLE, XLF, XLV, XLI, XLB, XLRE, XLK, XLU are <strong>watch only</strong> — Discord proximity alerts, no paper buys/sells</div>
-    <div class="rule"><strong>Daily Discord:</strong> After the bell (4:05 PM ET) — one message with a position summary for <strong>each pool</strong></div>
-    <div class="rule"><strong>Position size:</strong> ${s.sizing || (data.risk_pct + '% of equity')}</div>
-    <div class="rule"><strong>Stop loss:</strong> ${s.exit || 'Daily close below 55-Day SMA'}</div>
-    <div class="rule"><strong>Take profit:</strong> ${s.take_profit || '+10% sell 25% → +20% sell 25% → +30% exit rest'}</div>
-    <div class="rule"><strong>MA levels:</strong> ${s.levels.join(' · ')}</div>
-    <div class="rule"><strong>Pools:</strong> ${s.account} — signal-only MA entries (not weight rebalancing)</div>
-    <div class="rule"><strong>Discord:</strong> One channel; alerts prefixed [Main] or [Space DC]</div>`;
+    <div class="rule"><strong>Sector ETFs:</strong> Watch-only — Discord alerts, no paper trades</div>
+    <div class="rule"><strong>Size:</strong> ${s.sizing || (data.risk_pct + '% equity')}</div>
+    <div class="rule"><strong>Stop:</strong> ${s.exit}</div>
+    <div class="rule"><strong>Take profit:</strong> ${s.take_profit}</div>
+    <div class="rule"><strong>MA levels:</strong> ${s.levels.join(' · ')}</div>`;
 
   if (s.discord_roles) {
     document.getElementById('discord-roles').innerHTML = `
-      <div class="rule">Create roles in Discord → Server Settings → Roles. Enable Developer Mode, right-click role → <strong>Copy ID</strong>. Add to Railway:</div>
-      <div class="rule"><strong>@Traders</strong> — <code>DISCORD_ROLE_ENTRIES</code> — ping on every paper buy</div>
-      <div class="rule"><strong>@Risk</strong> — <code>DISCORD_ROLE_STOPS</code> — ping on 55 SMA stop-loss exits</div>
-      <div class="rule"><strong>@Profits</strong> — <code>DISCORD_ROLE_TAKEPROFIT</code> — ping on take-profit partial/full sells</div>
-      <div class="rule"><strong>@Alerts</strong> — <code>DISCORD_ROLE_PROXIMITY</code> — ping when price within 1% of a MA (noisy)</div>
-      <div class="rule"><strong>@Daily</strong> — <code>DISCORD_ROLE_DAILY</code> — ping on after-the-bell P&L summary</div>
-      <div class="rule"><strong>@Everyone fallback</strong> — <code>DISCORD_ROLE_ALERTS</code> — used if specific role not set</div>
-      <div class="rule" style="margin-top:10px;color:var(--dim)">Example: only @Daily for end-of-day, @Traders + @Risk for action items, skip @Alerts if too many pings.</div>`;
+      <div class="rule">Set role IDs in Railway env vars to ping on entries, stops, take-profits, proximity, and daily summary.</div>
+      <div class="rule"><code style="color:var(--green)">DISCORD_ROLE_ENTRIES</code> · <code style="color:var(--green)">DISCORD_ROLE_STOPS</code> · <code style="color:var(--green)">DISCORD_ROLE_TAKEPROFIT</code></div>
+      <div class="rule"><code style="color:var(--green)">DISCORD_ROLE_PROXIMITY</code> · <code style="color:var(--green)">DISCORD_ROLE_DAILY</code></div>`;
   }
 
-  const log = data.state && data.state.log ? data.state.log : (poolState.log || []);
-  document.getElementById('log-box').innerHTML = log.slice(0,100).map(e => {
-    const t = new Date(e.time).toLocaleTimeString('en-US',{hour12:false,hour:'2-digit',minute:'2-digit'});
-    const msg = e.message || e.msg || '';
-    return `<div class="log-row"><span style="color:var(--dim)">${t}</span><span class="log-type ${e.type}">${e.type}</span><span style="color:var(--dim)">${msg}</span></div>`;
-  }).join('') || '<div style="padding:10px;color:var(--dim)">No activity</div>';
+  const log = (data.state && data.state.log) ? data.state.log : (poolState.log || []);
+  document.getElementById('log-box').innerHTML = log.slice(0, 100).map(e => {
+    const t = new Date(e.time).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+    return `<div class="log-row"><span style="color:var(--dim)">${t}</span><span class="log-type ${e.type}">${e.type}</span><span style="color:var(--dim)">${e.message || e.msg || ''}</span></div>`;
+  }).join('') || '<div style="padding:12px;color:var(--dim)">No activity yet</div>';
 }
 
 async function refresh() {
@@ -307,7 +584,7 @@ async function refresh() {
     data = await res.json();
     if (data.activePool) activePool = data.activePool;
     render();
-  } catch(e) { toast('Refresh failed'); }
+  } catch (e) { toast('Refresh failed'); }
 }
 
 async function runScan() {
@@ -315,18 +592,22 @@ async function runScan() {
   try {
     await apiFetch(BASE + '/api/scan', { method: 'POST' });
     await refresh();
-    toast('Scan complete');
-  } catch(e) { toast('Scan failed'); }
+    toast('Done');
+  } catch (e) { toast('Scan failed'); }
 }
 
 async function toggle(ticker, enabled) {
-  await apiFetch(BASE + '/api/toggle', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ticker,enabled,pool:activePool}) });
+  await apiFetch(BASE + '/api/toggle', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ticker, enabled, pool: activePool })
+  });
   refresh();
 }
 
 refresh();
 setInterval(refresh, 30000);
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 </script>
 </body>
 </html>

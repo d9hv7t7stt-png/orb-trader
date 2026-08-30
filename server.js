@@ -134,6 +134,7 @@ app.get("/api/overview", async (req, res) => {
       near_hits: poolOverview.near_hits,
       tickers: poolOverview.tickers,
       ma_levels: tickers.MA_LEVELS,
+      alert_only: tickers.SECTOR_SPDR,
       proximity_pct: tickers.PROXIMITY_PCT * 100,
       risk_pct: tickers.RISK_PCT * 100,
       trade_size: poolOverview.trade_size,
