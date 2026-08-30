@@ -19,7 +19,7 @@ process.on("unhandledRejection", (err) => {
 function requireAuth(req, res, next) {
   var key = process.env.API_KEY;
   if (!key) return next();
-  var provided = req.headers["x-api-key"] || req.query.api_key;
+  var provided = req.headers["x-api-key"];
   if (provided === key) return next();
   return res.status(401).json({ error: "Unauthorized — set x-api-key header" });
 }
@@ -45,7 +45,7 @@ app.get("/api/config", (req, res) => {
   res.json({
     requiresAuth: !!process.env.API_KEY,
     pools: pools.getAllPools().map(function (p) {
-      return { id: p.id, label: p.shortLabel, balance: p.startingBalance };
+      return { id: p.id, label: p.shortLabel };
     })
   });
 });
@@ -69,13 +69,6 @@ app.get("/api/state", (req, res) => {
 function buildPoolOverview(poolId) {
   var pool = pools.getPool(poolId);
   var s = state.getState(poolId);
-  var p = paper.getPortfolio(poolId);
-  var livePrices = {};
-  Object.values(s.scanResults || {}).forEach(function (r) {
-    if (r && r.price) livePrices[r.ticker] = { price: r.price };
-  });
-  var unreal = paper.getUnrealizedPnL(poolId, livePrices);
-  var equity = paper.getEquity(poolId, livePrices);
 
   var nearHits = [];
   Object.values(s.scanResults || {}).forEach(function (r) {
@@ -96,22 +89,9 @@ function buildPoolOverview(poolId) {
     poolId: poolId,
     poolLabel: pool.shortLabel,
     poolName: pool.name,
-    startingBalance: p.startingBalance,
     state: s,
-    portfolio: {
-      cash: p.cash,
-      startingBalance: p.startingBalance,
-      equity: equity,
-      unrealized: unreal.total,
-      open_positions: Object.keys(p.positions).length,
-      wins: p.wins,
-      losses: p.losses
-    },
-    positions: unreal.details,
-    pnl: paper.getPnlSummary(poolId),
     near_hits: nearHits,
-    tickers: pool.getTickers(),
-    trade_size: paper.getPositionSizeUSD(poolId, livePrices)
+    tickers: pool.getTickers()
   };
 }
 
@@ -128,25 +108,21 @@ app.get("/api/overview", async (req, res) => {
       pools: allPools,
       pool: poolOverview,
       state: poolOverview.state,
-      portfolio: poolOverview.portfolio,
-      positions: poolOverview.positions,
-      pnl: poolOverview.pnl,
       near_hits: poolOverview.near_hits,
       tickers: poolOverview.tickers,
       ma_levels: tickers.MA_LEVELS,
       alert_only: tickers.SECTOR_SPDR,
       proximity_pct: tickers.PROXIMITY_PCT * 100,
       risk_pct: tickers.RISK_PCT * 100,
-      trade_size: poolOverview.trade_size,
       strategy: {
         data_source: "Yahoo Finance",
-        entry: "Paper buy when price within " + (tickers.PROXIMITY_PCT * 100) + "% of any monitored MA (one position per ticker per pool). Sector SPDRs (XLC–XLU) are watch-only — Discord alerts, no paper trades.",
-        sizing: (tickers.RISK_PCT * 100) + "% of equity per entry (~" + formatUsd(poolOverview.trade_size) + " at current equity)",
+        entry: "Paper buy when price within " + (tickers.PROXIMITY_PCT * 100) + "% of any monitored MA (one position per ticker per pool). No entry when daily close is below 55-Day SMA. Sector SPDRs (XLC–XLU) are watch-only — Discord alerts, no paper trades.",
+        sizing: (tickers.RISK_PCT * 100) + "% of equity per entry",
         exit: "Stop loss when daily close is below 55-Day SMA",
         take_profit: tickers.TAKE_PROFIT_TIERS.map(function (t) { return t.label; }).join(" → "),
         levels: tickers.MA_LEVELS.map(function (l) { return l.label; }),
         account: pools.getAllPools().map(function (p) {
-          return p.shortLabel + " $" + p.startingBalance.toLocaleString("en-US");
+          return p.shortLabel;
         }).join(" + "),
         discord_roles: {
           DISCORD_ROLE_ENTRIES: "Ping on paper buys (e.g. @Traders)",
@@ -162,10 +138,6 @@ app.get("/api/overview", async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
-
-function formatUsd(n) {
-  return "$" + Math.round(n).toLocaleString("en-US");
-}
 
 app.post("/api/scan", requireAuth, async (req, res) => {
   try {
@@ -213,6 +185,8 @@ app.listen(PORT, () => {
     console.log("  Pool " + pool.shortLabel + ": " + pool.getTickers().length + " tickers · $" + pool.startingBalance.toLocaleString("en-US"));
   });
   if (process.env.API_KEY) console.log("API_KEY auth enabled on write endpoints");
+  var flattened = scanner.flattenAllAlertOnlyPositions();
+  if (flattened) console.log("[Scanner] Flattened " + flattened + " alert-only sector position(s) on startup");
   scanner.scheduleScanner();
   discord.scheduleDailySummary();
   discord.scheduleSundayPremarket();

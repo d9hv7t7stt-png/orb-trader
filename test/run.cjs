@@ -130,6 +130,21 @@ async function main() {
     });
   });
 
+  await test("isBelowStopMA blocks entry when daily close is under 55 SMA", function () {
+    var data = {
+      ticker: "TEST",
+      price: 100,
+      stopPrice: 95,
+      levels: [
+        { key: "d_sma55", label: "55-Day SMA", value: 100, near: true, proximity_pct: 0.5 },
+        { key: "d_ema21", label: "21-Day EMA", value: 99, near: true, proximity_pct: 0.8 }
+      ]
+    };
+    assert.strictEqual(scanner.isBelowStopMA(data), true);
+    data.stopPrice = 105;
+    assert.strictEqual(scanner.isBelowStopMA(data), false);
+  });
+
   console.log("\npaper");
   resetTestData();
   delete require.cache[require.resolve("../utils/paper")];

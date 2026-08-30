@@ -36,6 +36,15 @@ function flattenAlertOnlyPositions(poolId, results) {
   return flattened;
 }
 
+function isBelowStopMA(data) {
+  if (!data || !data.levels) return false;
+  var sma55 = data.levels.find(function (l) { return l.key === tickers.STOP_MA_KEY; });
+  if (!sma55 || sma55.value == null) return false;
+  var checkPrice = data.stopPrice != null ? data.stopPrice : data.price;
+  if (checkPrice == null) return false;
+  return checkPrice < sma55.value;
+}
+
 function processStopLosses(poolId, results) {
   var exits = 0;
 
@@ -121,6 +130,7 @@ function processTicker(poolId, data, livePrices) {
   var alerts = 0;
   var entries = 0;
   var alreadyInTicker = paper.hasAnyPosition(poolId, ticker);
+  var belowStop = isBelowStopMA(data);
 
   data.levels.forEach(function (level) {
     if (!level.near || level.value == null) return;
@@ -134,6 +144,7 @@ function processTicker(poolId, data, livePrices) {
 
     if (alreadyInTicker) return;
     if (tickers.isAlertOnly(ticker)) return;
+    if (belowStop) return;
     if (!paper.hasPosition(poolId, ticker, level.key)) {
       var riskUsd = paper.getPositionSizeUSD(poolId, livePrices);
       var shares = Math.floor(riskUsd / data.price);
@@ -201,7 +212,7 @@ function runPoolScan(poolId, allResults, marketOpen, opts) {
   }
 
   var equity = paper.getEquity(poolId, livePrices);
-  state.logEvent("SCAN_DONE", totalAlerts + " alerts, " + totalEntries + " entries, " + totalExits + " stops, " + totalTakeProfits + " TPs, equity $" + equity.toFixed(0), poolId);
+  state.logEvent("SCAN_DONE", totalAlerts + " alerts, " + totalEntries + " entries, " + totalExits + " stops, " + totalTakeProfits + " TPs", poolId);
 
   return {
     poolId: poolId,
@@ -265,6 +276,15 @@ function startupScanForced() {
   return marketHours.isMarketHours();
 }
 
+function flattenAllAlertOnlyPositions() {
+  var flattened = 0;
+  pools.getAllPools().forEach(function (pool) {
+    var s = state.getState(pool.id);
+    flattened += flattenAlertOnlyPositions(pool.id, s.scanResults || {});
+  });
+  return flattened;
+}
+
 function scheduleScanner() {
   var intervalMin = parseInt(process.env.SCAN_INTERVAL_MIN || "30", 10);
   state.logEvent("SCAN", "Scanner scheduled every " + intervalMin + " min (all pools)");
@@ -288,5 +308,7 @@ function scheduleScanner() {
 module.exports = {
   runScan: runScan,
   scheduleScanner: scheduleScanner,
-  startupScanForced: startupScanForced
+  startupScanForced: startupScanForced,
+  isBelowStopMA: isBelowStopMA,
+  flattenAllAlertOnlyPositions: flattenAllAlertOnlyPositions
 };
