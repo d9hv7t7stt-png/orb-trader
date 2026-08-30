@@ -15,12 +15,15 @@ function logTradePnL(ticker, side, entryPrice, exitPrice, contracts) {
 }
 var trayd = require("../utils/trayd");
 var discord = require("../utils/discord");
+var signals = require("../utils/signals");
 
 /*
-  TradingView webhook payloads:
+  TradingView webhook payloads (POST /webhook):
 
-  30-min bar close (fires on every 30-min bar):
+  30-min bar close — fires every bar:
   {"ticker":"SPY","event":"bar_close","close":757.50,"sma55":754.20,"option_price":3.40}
+  Optional EMA mode — include ema21 for 21 EMA + 55 SMA stack entries:
+  {"ticker":"SPY","event":"bar_close","close":757.50,"sma55":754.20,"ema21":756.10,"option_price":3.40}
 
   Weekly expected move hit:
   {"ticker":"SPY","event":"weekly_move_hit","option_price":5.20}
@@ -58,15 +61,23 @@ async function handleAlert(payload) {
   if (event === "bar_close") {
     var close = parseFloat(payload.close);
     var sma55 = parseFloat(payload.sma55);
+    var ema21 = payload.ema21 != null ? parseFloat(payload.ema21) : null;
     var optPrice = payload.option_price ? parseFloat(payload.option_price) : null;
 
     if (!close || !sma55) throw new Error("bar_close requires close and sma55");
 
-    var pos = stateModule.getPosition(ticker);
+    var signalInfo = signals.describeSignal(close, sma55, ema21);
+    stateModule.setLastSignal(ticker, {
+      close: close,
+      sma55: sma55,
+      ema21: ema21,
+      mode: signalInfo.mode,
+      signal: signalInfo.signal,
+      option_price: optPrice
+    });
 
-    // ── SMA signal
-    var aboveSMA = close > sma55;
-    var belowSMA = close < sma55;
+    var pos = stateModule.getPosition(ticker);
+    var newSignal = signalInfo.signal;
 
     // ── STOP LOSS CHECK (price-based stop after breakeven activated)
     if (pos && !pos.stopped && pos.stopLevel !== null && optPrice) {
@@ -84,7 +95,7 @@ async function handleAlert(payload) {
 
     // ── SMA-based exit (no breakeven yet — original stop)
     if (pos && !pos.stopped && pos.stopLevel === null) {
-      var smaExit = (pos.side === "call" && belowSMA) || (pos.side === "put" && aboveSMA);
+      var smaExit = signals.shouldSmaExit(pos.side, close, sma55, ema21);
       if (smaExit) {
         stateModule.logEvent("SMA_EXIT", ticker + " SMA exit: close=" + close + " sma=" + sma55);
         await trayd.closeSwingPosition(ticker, pos.contracts, "SMA crossover exit");
@@ -139,8 +150,6 @@ async function handleAlert(payload) {
     }
 
     // ── ENTRY / FLIP LOGIC
-    var newSignal = aboveSMA ? "call" : belowSMA ? "put" : null;
-
     if (newSignal && (!pos || pos.stopped)) {
       // Fresh entry
       var contracts = s.contracts[ticker];
