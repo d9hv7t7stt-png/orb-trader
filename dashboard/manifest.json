@@ -1,7 +1,7 @@
 {
-  "name": "Argus Swing Trader",
-  "short_name": "Argus Swing",
-  "description": "Argus Swing Trader — 55 SMA / 21 EMA swing options dashboard",
+  "name": "Argus Stock Trader",
+  "short_name": "Argus Stock",
+  "description": "Paper stock trader — MA proximity scanner via Yahoo Finance",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#080c10",

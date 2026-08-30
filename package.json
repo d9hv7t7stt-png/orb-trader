@@ -1,7 +1,7 @@
 {
-  "name": "argus-swing-trader",
-  "version": "3.1.0",
-  "description": "Argus Swing Trader — 55 SMA crossover options execution",
+  "name": "argus-stock-trader",
+  "version": "4.0.0",
+  "description": "Argus paper stock trader — MA proximity scanner via Yahoo Finance",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
