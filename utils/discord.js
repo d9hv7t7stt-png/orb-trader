@@ -93,6 +93,82 @@ function formatPct(n) {
   return (n >= 0 ? "+" : "") + n.toFixed(1) + "%";
 }
 
+function formatMaPrice(v) {
+  return v != null ? "$" + Number(v).toFixed(2) : "—";
+}
+
+function levelValue(scanRow, key) {
+  if (!scanRow || !scanRow.levels) return null;
+  var found = scanRow.levels.find(function (l) { return l.key === key; });
+  return found && found.value != null ? found.value : null;
+}
+
+function fieldsFromLines(baseName, lines, limit) {
+  limit = limit || 1024;
+  var fields = [];
+  var buf = [];
+  var len = 0;
+  function flush() {
+    if (!buf.length) return;
+    var name = fields.length === 0 ? baseName : baseName + " (" + (fields.length + 1) + ")";
+    fields.push({ name: name, value: buf.join("\n").slice(0, limit), inline: false });
+    buf = [];
+    len = 0;
+  }
+  lines.forEach(function (line) {
+    var add = (buf.length ? 1 : 0) + line.length;
+    if (len + add > limit) flush();
+    buf.push(line);
+    len += add;
+  });
+  flush();
+  return fields;
+}
+
+function priorClose(scanRow, fallback) {
+  if (scanRow && scanRow.stopPrice != null) return scanRow.stopPrice;
+  if (scanRow && scanRow.price != null) return scanRow.price;
+  return fallback != null ? fallback : null;
+}
+
+function buildSpaceDcWatchlistFields(livePrices, scanResults) {
+  var paperMod = require("./paper");
+  var spaceDcBook = require("./spaceDcBook");
+  var p = paperMod.getPortfolio("space_dc");
+  var byTicker = spaceDcBook.positionByTicker(p);
+  livePrices = livePrices || {};
+  scanResults = scanResults || {};
+
+  var lines = [];
+  spaceDcBook.watchlistTickers().forEach(function (ticker) {
+    var row = scanResults[ticker] || {};
+    var pos = byTicker[ticker];
+    var close = priorClose(row, pos ? pos.entryPrice : null);
+    var ema21 = levelValue(row, "d_ema21");
+    var sma55 = levelValue(row, "d_sma55");
+    var px = livePrices[ticker] && livePrices[ticker].price != null
+      ? livePrices[ticker].price
+      : (close != null ? close : (pos ? pos.entryPrice : null));
+    lines.push(
+      ticker.padEnd(5) + "  " + formatMaPrice(close)
+        + "  21 " + formatMaPrice(ema21)
+        + "  55 " + formatMaPrice(sma55)
+    );
+    if (pos && pos.shares) {
+      var value = pos.shares * (px != null ? px : pos.entryPrice);
+      var pct = pos.entryPrice ? (((px != null ? px : pos.entryPrice) - pos.entryPrice) / pos.entryPrice) * 100 : 0;
+      lines.push("     " + pos.shares + "sh  " + formatMoney(value) + "  " + formatPct(pct));
+    } else {
+      lines.push("     no position");
+    }
+  });
+  lines.push("CASH  " + formatMoney(p.cash));
+  spaceDcBook.SOLD.forEach(function (sold) {
+    lines.push(sold.ticker + "  " + sold.note);
+  });
+  return fieldsFromLines("Watchlist", lines);
+}
+
 function livePricesFromState() {
   var stateMod = require("./state");
   var livePricesByPool = {};
@@ -229,14 +305,6 @@ async function postStockDailySummary(livePricesByPool) {
 
     var allowed = {};
     pool.getTickers().forEach(function (t) { allowed[t] = true; });
-    var openLines = Object.values(p.positions).filter(function (pos) {
-      return allowed[pos.ticker];
-    }).map(function (pos) {
-      var px = livePrices[pos.ticker] ? livePrices[pos.ticker].price : pos.entryPrice;
-      var u = (px - pos.entryPrice) * pos.shares;
-      return "• " + pos.ticker + " (" + pos.maLabel + ") " + pos.shares + "sh · uP&L " + formatMoney(u);
-    }).join("\n") || "No open positions";
-
     fields.push(
       { name: pool.shortLabel + " — Equity", value: formatMoney(equity), inline: true },
       { name: pool.shortLabel + " — Cash", value: formatMoney(p.cash), inline: true },
@@ -244,10 +312,26 @@ async function postStockDailySummary(livePricesByPool) {
       { name: pool.shortLabel + " — Realized Today", value: pnlSum.daily != null ? formatMoney(pnlSum.daily) : "—", inline: true },
       { name: pool.shortLabel + " — Net P&L", value: formatMoney(netPnl), inline: true },
       { name: pool.shortLabel + " — W / L", value: p.wins + " / " + p.losses, inline: true },
-      { name: pool.shortLabel + " — Closed Today", value: tradeLines.slice(0, 1000), inline: false },
-      { name: pool.shortLabel + " — Open Positions", value: openLines.slice(0, 1000), inline: false },
-      { name: pool.shortLabel + " — Next Entry", value: formatMoney(paperMod.getPositionSizeUSD(pool.id, livePrices)) + " (" + riskPct + "% equity)", inline: false }
+      { name: pool.shortLabel + " — Closed Today", value: tradeLines.slice(0, 1000), inline: false }
     );
+    if (pool.id === "space_dc") {
+      var stateMod = require("./state");
+      buildSpaceDcWatchlistFields(livePrices, stateMod.getState(pool.id).scanResults || {}).forEach(function (f) {
+        fields.push({ name: pool.shortLabel + " — " + f.name, value: f.value, inline: false });
+      });
+    } else {
+      var openLines = Object.values(p.positions).filter(function (pos) {
+        return allowed[pos.ticker];
+      }).map(function (pos) {
+        var px = livePrices[pos.ticker] ? livePrices[pos.ticker].price : pos.entryPrice;
+        var u = (px - pos.entryPrice) * pos.shares;
+        return "• " + pos.ticker + " (" + pos.maLabel + ") " + pos.shares + "sh · uP&L " + formatMoney(u);
+      }).join("\n") || "No open positions";
+      fields.push(
+        { name: pool.shortLabel + " — Open Positions", value: openLines.slice(0, 1000), inline: false },
+        { name: pool.shortLabel + " — Next Entry", value: formatMoney(paperMod.getPositionSizeUSD(pool.id, livePrices)) + " (" + riskPct + "% equity)", inline: false }
+      );
+    }
   });
 
   var color = totalNet >= 0 ? 0x00e5a0 : 0xff4d6a;
@@ -302,6 +386,29 @@ function buildSundayPremarketEmbeds(livePricesByPool) {
     pool.getTickers().forEach(function (t) { allowed[t] = true; });
     var knownPositions = Object.values(p.positions).filter(function (pos) { return allowed[pos.ticker]; });
 
+    var fields = [
+      { name: "Equity", value: formatMoney(equity), inline: true },
+      { name: "Cash", value: formatMoney(p.cash), inline: true },
+      { name: "Unrealized", value: formatMoney(unreal.total), inline: true },
+      { name: "Net P&L", value: formatMoney(netPnl), inline: true }
+    ];
+
+    if (pool.id === "space_dc") {
+      fields.push({ name: "Open", value: String(knownPositions.length), inline: true });
+      fields.push({ name: "Names", value: String(require("./spaceDcBook").watchlistTickers().length), inline: true });
+      buildSpaceDcWatchlistFields(livePrices, s.scanResults || {}).forEach(function (f) {
+        fields.push(f);
+      });
+      return {
+        color: 0x4da6ff,
+        title: poolTag(pool.id) + "🌅 SUNDAY PREMARKET",
+        description: "Week-ahead briefing · " + dateLabel + " · " + timeLabel + " · Book from 6/30/26 rebalance",
+        fields: fields,
+        footer: { text: accountFooter(pool.id) },
+        timestamp: new Date().toISOString()
+      };
+    }
+
     var openLines = knownPositions.map(function (pos) {
       var px = livePrices[pos.ticker] ? livePrices[pos.ticker].price : pos.entryPrice;
       var u = (px - pos.entryPrice) * pos.shares;
@@ -310,36 +417,33 @@ function buildSundayPremarketEmbeds(livePricesByPool) {
     }).join("\n") || "No open positions — waiting for MA proximity";
 
     var tickersMod = require("./tickers");
-    var useMainOrder = pool.id === "main";
     var nearHits = [];
     Object.values(s.scanResults || {}).forEach(function (r) {
       if (!r || !r.levels) return;
       r.levels.filter(function (l) { return l.near && tickersMod.isBriefingMa(l); }).forEach(function (l) {
-        if (useMainOrder && !tickersMod.isBriefingTicker(r.ticker)) return;
+        if (!tickersMod.isBriefingTicker(r.ticker)) return;
         nearHits.push({ ticker: r.ticker, key: l.key, level: l.label, ma: l.value });
       });
     });
-    var nearLines = groupNearHits(nearHits, useMainOrder).map(function (g) {
+    var nearLines = groupNearHits(nearHits, true).map(function (g) {
       var chips = g.levels.map(function (l) {
         return l.level + " " + (l.ma != null ? formatMoney(l.ma) : "—");
       }).join(", ");
       return "• " + tickersMod.getDisplayTicker(g.ticker) + " — " + chips;
     }).join("\n") || "Nothing within 1% of the 21-Day EMA or 55-Day SMA";
 
+    fields.push(
+      { name: "Open", value: String(knownPositions.length), inline: true },
+      { name: "Next Entry", value: formatMoney(paperMod.getPositionSizeUSD(pool.id, livePrices)), inline: true },
+      { name: "Open Positions", value: openLines.slice(0, 1000), inline: false },
+      { name: "Near MA", value: nearLines.slice(0, 1000), inline: false }
+    );
+
     return {
       color: 0x4da6ff,
       title: poolTag(pool.id) + "🌅 SUNDAY PREMARKET",
       description: "Week-ahead briefing · " + dateLabel + " · " + timeLabel,
-      fields: [
-        { name: "Equity", value: formatMoney(equity), inline: true },
-        { name: "Cash", value: formatMoney(p.cash), inline: true },
-        { name: "Unrealized", value: formatMoney(unreal.total), inline: true },
-        { name: "Net P&L", value: formatMoney(netPnl), inline: true },
-        { name: "Open", value: String(knownPositions.length), inline: true },
-        { name: "Next Entry", value: formatMoney(paperMod.getPositionSizeUSD(pool.id, livePrices)), inline: true },
-        { name: "Open Positions", value: openLines.slice(0, 1000), inline: false },
-        { name: "Near MA", value: nearLines.slice(0, 1000), inline: false }
-      ],
+      fields: fields,
       footer: { text: accountFooter(pool.id) },
       timestamp: new Date().toISOString()
     };

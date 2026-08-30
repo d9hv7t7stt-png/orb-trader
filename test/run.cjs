@@ -187,6 +187,57 @@ async function main() {
     assert.ok(paper.getPositionSizeUSD("main", {}) >= 100);
   });
 
+  await test("replacePortfolio updates cache and disk", function () {
+    paper.resetPortfolio("main");
+    paper.replacePortfolio("main", function (p) {
+      p.cash = 12345;
+      p.note = "patched";
+      return p;
+    });
+    assert.strictEqual(paper.getPortfolio("main").cash, 12345);
+    delete require.cache[require.resolve("../utils/paper")];
+    var paper2 = require("../utils/paper");
+    assert.strictEqual(paper2.getPortfolio("main").cash, 12345);
+    paper = paper2;
+  });
+
+  console.log("\nspaceDcBook");
+  var spaceDcBook = require("../utils/spaceDcBook");
+
+  await test("rebalance weights plus cash equal 100%", function () {
+    var stock = spaceDcBook.LOTS.reduce(function (s, l) { return s + l.weight; }, 0);
+    assert.ok(Math.abs(stock + spaceDcBook.CASH_WEIGHT - 1) < 1e-9);
+    assert.strictEqual(spaceDcBook.LOTS.length, 15);
+    assert.strictEqual(spaceDcBook.SOLD[0].ticker, "IRDM");
+  });
+
+  await test("share counts come from 6/30/26 closes and $108k weights", function () {
+    var lots = spaceDcBook.lotsWithShares();
+    var byTicker = {};
+    lots.forEach(function (l) { byTicker[l.ticker] = l; });
+    assert.strictEqual(byTicker.NVDA.shares, 86);
+    assert.strictEqual(byTicker.GOOGL.shares, 42);
+    assert.strictEqual(byTicker.ASTS.shares, 97);
+    assert.strictEqual(byTicker.ONDS.shares, 393);
+    var invested = lots.reduce(function (s, l) { return s + l.cost; }, 0);
+    var cash = spaceDcBook.REBALANCE_EQUITY - invested;
+    assert.ok(cash > 10000 && cash < 12000, "cash should be ~10%, got " + cash);
+  });
+
+  await test("seedSpaceDcBook writes 15 held lots and ~10% cash", function () {
+    paper.resetPortfolio("space_dc");
+    var p = spaceDcBook.seedSpaceDcBook(true);
+    assert.strictEqual(Object.keys(p.positions).length, 15);
+    assert.strictEqual(p.seededFromRebalance, true);
+    assert.ok(p.cash > 10000 && p.cash < 12000);
+    Object.values(p.positions).forEach(function (pos) {
+      assert.strictEqual(pos.heldBook, true);
+      assert.ok(pos.shares >= 1);
+    });
+    var again = spaceDcBook.seedSpaceDcBook(false);
+    assert.strictEqual(again.positions["NVDA:rebalance"].shares, 86);
+  });
+
   console.log("\ndiscord");
   var discord = require("../utils/discord");
 
@@ -243,6 +294,46 @@ async function main() {
     var xlbAt = near.indexOf("XLB");
     var xlyAt = near.indexOf("XLY");
     assert.ok(spxAt < spyAt && spyAt < nvdaAt && nvdaAt < xlbAt && xlbAt < xlyAt);
+  });
+
+  await test("Space DC Sunday lists every name with prior close, 21/55, shares, and IRDM sold", function () {
+    var stateMod = require("../utils/state");
+    paper.resetPortfolio("space_dc");
+    spaceDcBook.seedSpaceDcBook(true);
+    var scan = {};
+    pools.SPACE_DC_TICKERS.forEach(function (t) {
+      scan[t] = {
+        ticker: t,
+        price: 50,
+        stopPrice: 49.25,
+        levels: [
+          { key: "d_ema21", label: "21-Day EMA", value: 48.1, near: true },
+          { key: "d_sma55", label: "55-Day SMA", value: 47.2, near: false },
+          { key: "d_sma200", label: "200-Day SMA", value: 40, near: true }
+        ]
+      };
+    });
+    stateMod.setScanResults("space_dc", scan);
+    var space = discord.buildSundayPremarketEmbeds({
+      space_dc: { NVDA: { price: 217.55 } }
+    }).find(function (e) { return e.title.indexOf("Space DC") !== -1; });
+    var watch = space.fields.filter(function (f) {
+      return f.name.indexOf("Watchlist") === 0;
+    }).map(function (f) { return f.value; }).join("\n");
+    pools.SPACE_DC_TICKERS.forEach(function (t) {
+      assert.ok(watch.indexOf(t) !== -1, "missing " + t);
+    });
+    assert.ok(watch.indexOf("$49.25") !== -1, "prior close");
+    assert.ok(watch.indexOf("21 $48.10") !== -1);
+    assert.ok(watch.indexOf("55 $47.20") !== -1);
+    assert.ok(watch.indexOf("200") === -1, "200-day should not be listed");
+    assert.ok(watch.indexOf("86sh") !== -1);
+    assert.ok(watch.indexOf("IRDM") !== -1);
+    assert.ok(watch.indexOf("Sold @ $54") !== -1);
+    assert.ok(watch.indexOf("CASH") !== -1);
+    assert.ok(!space.fields.some(function (f) { return f.name === "Near MA"; }));
+    var blob = JSON.stringify(space).toLowerCase();
+    assert.strictEqual(blob.indexOf("paper") === -1, true);
   });
 
   console.log("\nindicators");
