@@ -24,7 +24,7 @@ function accountFooter(poolId) {
   try {
     equity = require("./paper").getEquity(poolId, {});
   } catch (e) {}
-  return "Argus Paper · " + pool.shortLabel + " · Equity " + formatMoney(equity);
+  return "Argus · " + pool.shortLabel + " · Equity " + formatMoney(equity);
 }
 
 async function httpPost(url, data) {
@@ -143,7 +143,7 @@ async function postProximityAlert(poolId, ticker, price, level) {
     color: 0x4da6ff,
     title: poolTag(poolId) + (require("./tickers").isAlertOnly(ticker) ? "📍 WATCH — " : "📍 MA PROXIMITY — ") + ticker,
     description: ticker + " is within **" + level.proximity_pct + "%** of **" + level.label + "**" +
-      (require("./tickers").isAlertOnly(ticker) ? "\n*Watch only — sector ETFs are not paper-traded.*" : ""),
+      (require("./tickers").isAlertOnly(ticker) ? "\n*Watch only — sector ETFs are alerts, not trades.*" : ""),
     fields: [
       { name: "Price", value: "$" + price.toFixed(2), inline: true },
       { name: "MA Level", value: "$" + level.value.toFixed(2), inline: true },
@@ -255,7 +255,7 @@ async function postStockDailySummary(livePricesByPool) {
     title: "🔔 AFTER THE BELL — Position summary · " + new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }),
     description: "One message, both pools. Combined equity " + formatMoney(totalEquity) + " · Combined net P&L " + formatMoney(totalNet),
     fields: fields,
-    footer: { text: "Argus Paper · Main $50K + Space DC $108K · Stop: daily close < 55 SMA · TP: +10/+20/+30%" },
+    footer: { text: "Argus · Main + Space DC · Stop: daily close < 55 SMA · TP: +10/+20/+30%" },
     timestamp: new Date().toISOString()
   }] }, "daily");
 }
@@ -322,7 +322,7 @@ function buildSundayPremarketEmbeds(livePricesByPool) {
         { name: "Open Positions", value: openLines.slice(0, 1000), inline: false },
         { name: "Near MA (1%)", value: nearLines.slice(0, 1000), inline: false }
       ],
-      footer: { text: accountFooter(pool.id) + " · Paper P&L is Discord-only" },
+      footer: { text: accountFooter(pool.id) },
       timestamp: new Date().toISOString()
     };
   });

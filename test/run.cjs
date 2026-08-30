@@ -200,6 +200,8 @@ async function main() {
     assert.ok(embeds.every(function (e) { return e.title.indexOf("SUNDAY PREMARKET") !== -1; }));
     assert.ok(embeds[0].fields.some(function (f) { return f.name === "Equity"; }));
     assert.ok(embeds[0].description.indexOf("3:00 PM ET") !== -1);
+    var blob = JSON.stringify(embeds).toLowerCase();
+    assert.strictEqual(blob.indexOf("paper") === -1, true, "Discord copy must not mention paper trading");
   });
 
   console.log("\nindicators");
