@@ -178,6 +178,31 @@ function fieldsFromTable(baseName, headers, rows, aligns) {
   });
 }
 
+function fieldsFromLines(baseName, lines, limit) {
+  limit = limit || 1024;
+  var fields = [];
+  var buf = [];
+  var len = 0;
+  function flush() {
+    if (!buf.length) return;
+    fields.push({
+      name: fields.length === 0 ? baseName : baseName + " (" + (fields.length + 1) + ")",
+      value: buf.join("\n").slice(0, limit),
+      inline: false
+    });
+    buf = [];
+    len = 0;
+  }
+  lines.forEach(function (line) {
+    var add = (buf.length ? 1 : 0) + line.length;
+    if (buf.length && len + add > limit) flush();
+    buf.push(line);
+    len += add;
+  });
+  flush();
+  return fields;
+}
+
 function priorClose(scanRow, fallback) {
   if (scanRow && scanRow.stopPrice != null) return scanRow.stopPrice;
   if (scanRow && scanRow.price != null) return scanRow.price;
@@ -191,48 +216,37 @@ function buildSpaceDcWatchlistFields(livePrices, scanResults) {
   var byTicker = spaceDcBook.positionByTicker(p);
   livePrices = livePrices || {};
   scanResults = scanResults || {};
-  var aligns = ["left", "right", "right", "right", "right", "right", "right"];
-  var headers = ["TICK", "CLOSE", "21", "55", "SH", "VALUE", "%"];
-  var rows = [];
+  var lines = [];
 
   spaceDcBook.watchlistTickers().forEach(function (ticker) {
     var row = scanResults[ticker] || {};
     var pos = byTicker[ticker];
-    var close = priorClose(row, pos ? pos.entryPrice : null);
-    var ema21 = levelValue(row, "d_ema21");
-    var sma55 = levelValue(row, "d_sma55");
-    var px = livePrices[ticker] && livePrices[ticker].price != null
-      ? livePrices[ticker].price
-      : (close != null ? close : (pos ? pos.entryPrice : null));
+    var close = priorClose(row, null);
+    if (close == null && livePrices[ticker] && livePrices[ticker].price != null) {
+      close = livePrices[ticker].price;
+    }
+    if (close == null && pos) close = pos.entryPrice;
     if (pos && pos.shares) {
-      var value = pos.shares * (px != null ? px : pos.entryPrice);
-      var pct = pos.entryPrice ? (((px != null ? px : pos.entryPrice) - pos.entryPrice) / pos.entryPrice) * 100 : 0;
-      rows.push([
-        ticker,
-        formatMaPrice(close),
-        formatMaPrice(ema21),
-        formatMaPrice(sma55),
-        String(pos.shares),
-        formatMoney(value),
-        formatPct(pct)
-      ]);
+      var mark = close != null ? close : pos.entryPrice;
+      var pnl = (mark - pos.entryPrice) * pos.shares;
+      var pct = pos.entryPrice ? ((mark - pos.entryPrice) / pos.entryPrice) * 100 : 0;
+      var pnlStr = (pnl > 0 ? "+" : "") + formatMoney(pnl);
+      lines.push(
+        "$" + ticker
+          + " - " + formatMaPrice(close)
+          + " - " + pos.shares + " Shares"
+          + " - " + formatMoney(pos.entryPrice)
+          + " - " + pnlStr + " (" + formatPct(pct) + ")"
+      );
     } else {
-      rows.push([
-        ticker,
-        formatMaPrice(close),
-        formatMaPrice(ema21),
-        formatMaPrice(sma55),
-        "-",
-        "-",
-        "-"
-      ]);
+      lines.push("$" + ticker + " - " + formatMaPrice(close) + " - 0 Shares");
     }
   });
-  rows.push(["CASH", formatMoney(p.cash), "-", "-", "-", "-", "-"]);
+  lines.push("$CASH - " + formatMoney(p.cash));
   spaceDcBook.SOLD.forEach(function (sold) {
-    rows.push([sold.ticker, sold.note.replace("Sold @ $54 — out at rebalance", "Sold @ $54"), "-", "-", "-", "-", "-"]);
+    lines.push("$" + sold.ticker + " - Sold @ $54");
   });
-  return fieldsFromTable("Watchlist", headers, rows, aligns);
+  return fieldsFromLines("Watchlist", lines);
 }
 
 function buildMainWatchlistFields(scanResults) {

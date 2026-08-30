@@ -330,7 +330,7 @@ async function main() {
     });
   });
 
-  await test("Space DC Sunday lists every name with prior close, 21/55, shares, and IRDM sold", function () {
+  await test("Space DC Sunday uses $TICKER - close - shares - entry - P&L", function () {
     var stateMod = require("../utils/state");
     paper.resetPortfolio("space_dc");
     spaceDcBook.seedSpaceDcBook(true);
@@ -342,8 +342,7 @@ async function main() {
         stopPrice: 49.25,
         levels: [
           { key: "d_ema21", label: "21-Day EMA", value: 48.1, near: true },
-          { key: "d_sma55", label: "55-Day SMA", value: 47.2, near: false },
-          { key: "d_sma200", label: "200-Day SMA", value: 40, near: true }
+          { key: "d_sma55", label: "55-Day SMA", value: 47.2, near: false }
         ]
       };
     });
@@ -353,17 +352,14 @@ async function main() {
     }).find(function (e) { return e.title.indexOf("Space DC") !== -1; });
     var blob = space.fields.map(function (f) { return f.name + "\n" + f.value; }).join("\n");
     pools.SPACE_DC_TICKERS.forEach(function (t) {
-      assert.ok(blob.indexOf(t) !== -1, "missing " + t);
+      assert.ok(blob.indexOf("$" + t + " - ") !== -1, "missing $" + t);
     });
-    assert.ok(blob.indexOf("$49.25") !== -1, "prior close");
-    assert.ok(blob.indexOf("$48.10") !== -1);
-    assert.ok(blob.indexOf("$47.20") !== -1);
-    assert.ok(blob.indexOf("200-Day") === -1, "200-day should not be listed");
-    assert.ok(blob.indexOf("│") !== -1 && blob.indexOf("```") !== -1);
-    assert.ok(/\b86\b/.test(blob));
-    assert.ok(blob.indexOf("IRDM") !== -1);
-    assert.ok(blob.indexOf("Sold @ $54") !== -1);
-    assert.ok(blob.indexOf("CASH") !== -1);
+    assert.ok(blob.indexOf("$NVDA - $49.25 - 86 Shares - $200.09 - ") !== -1);
+    assert.ok(blob.indexOf("(-75.4%)") !== -1 || blob.indexOf("(-75.3%)") !== -1);
+    assert.ok(blob.indexOf("$CASH - ") !== -1);
+    assert.ok(blob.indexOf("$IRDM - Sold @ $54") !== -1);
+    assert.ok(blob.indexOf("21-Day") === -1);
+    assert.ok(blob.indexOf("55-Day") === -1);
     assert.ok(!space.fields.some(function (f) { return f.name === "Near MA" || f.name === "Cash & sold"; }));
     space.fields.filter(function (f) { return f.name.indexOf("Watchlist") === 0; }).forEach(function (f) {
       assert.ok(f.value.length <= 1024, "embed field too long: " + f.value.length);
