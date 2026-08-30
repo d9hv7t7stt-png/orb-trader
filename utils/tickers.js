@@ -78,6 +78,7 @@ var TAKE_PROFIT_TIERS = [
 ];
 
 module.exports = {
+  YAHOO_MAP: YAHOO_MAP,
   getAllTickers: getAllTickers,
   getYahooSymbol: getYahooSymbol,
   getDisplayName: getDisplayName,

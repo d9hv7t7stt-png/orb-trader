@@ -1,71 +1,156 @@
 var fs = require("fs");
 var tickers = require("./tickers");
+var pools = require("./pools");
+var paths = require("./paths");
 
-var PERSIST_FILE = "/tmp/stock-trader-state.json";
+var PERSIST_FILE = paths.dataPath("stock-trader-state.json");
+var LEGACY_STATE = "/tmp/stock-trader-state.json";
+
+function defaultPoolTickers(pool) {
+  var map = {};
+  pool.getTickers().forEach(function (t) { map[t] = true; });
+  return map;
+}
+
+function defaultPoolState(pool) {
+  return {
+    tickers: defaultPoolTickers(pool),
+    scanResults: {},
+    lastAlerts: {},
+    lastScan: null
+  };
+}
+
+function defaultState() {
+  var state = { mode: "paper_stock", pools: {}, log: [] };
+  pools.getAllPools().forEach(function (pool) {
+    state.pools[pool.id] = defaultPoolState(pool);
+  });
+  return state;
+}
 
 function loadPersisted() {
   try {
     if (fs.existsSync(PERSIST_FILE)) return JSON.parse(fs.readFileSync(PERSIST_FILE, "utf8"));
-  } catch (e) {}
+    if (fs.existsSync(LEGACY_STATE)) {
+      var legacy = JSON.parse(fs.readFileSync(LEGACY_STATE, "utf8"));
+      paths.ensureDataDir();
+      savePersisted(mergeState(legacy));
+      console.log("[State] Migrated legacy state from /tmp");
+      return legacy;
+    }
+  } catch (e) {
+    console.error("[State] Load error:", e.message);
+  }
   return null;
 }
 
-function savePersisted() {
+function savePersisted(state) {
   try {
-    fs.writeFileSync(PERSIST_FILE, JSON.stringify({
-      tickers: state.tickers,
-      lastAlerts: state.lastAlerts
-    }));
-  } catch (e) {}
+    paths.ensureDataDir();
+    var poolsOut = {};
+    pools.getAllPools().forEach(function (pool) {
+      var ps = state.pools[pool.id] || defaultPoolState(pool);
+      poolsOut[pool.id] = {
+        tickers: ps.tickers,
+        lastAlerts: ps.lastAlerts
+      };
+    });
+    fs.writeFileSync(PERSIST_FILE, JSON.stringify({ pools: poolsOut }));
+  } catch (e) {
+    console.error("[State] Save error:", e.message);
+  }
 }
 
-var _saved = loadPersisted();
-var allTickers = tickers.getAllTickers();
-
-function defaultTickers() {
-  var map = {};
-  allTickers.forEach(function (t) { map[t] = true; });
-  return map;
+function mergeState(saved) {
+  var state = defaultState();
+  if (saved && saved.pools) {
+    pools.getAllPools().forEach(function (pool) {
+      var ps = saved.pools[pool.id] || {};
+      state.pools[pool.id] = {
+        tickers: Object.assign(defaultPoolTickers(pool), ps.tickers || {}),
+        scanResults: {},
+        lastAlerts: ps.lastAlerts || {},
+        lastScan: null
+      };
+    });
+  } else if (saved && saved.tickers) {
+    state.pools.main = {
+      tickers: Object.assign(defaultPoolTickers(pools.getPool("main")), saved.tickers),
+      scanResults: saved.scanResults || {},
+      lastAlerts: saved.lastAlerts || {},
+      lastScan: saved.lastScan || null
+    };
+  }
+  return state;
 }
 
-var state = {
-  mode: "paper_stock",
-  tickers: (_saved && _saved.tickers) ? Object.assign(defaultTickers(), _saved.tickers) : defaultTickers(),
-  scanResults: {},
-  lastAlerts: (_saved && _saved.lastAlerts) ? _saved.lastAlerts : {},
-  log: []
-};
+var state = mergeState(loadPersisted());
 
-function getState() { return state; }
-
-function isTickerEnabled(ticker) {
-  return state.tickers[ticker] !== false;
+function poolState(poolId) {
+  if (!pools.isValidPoolId(poolId)) poolId = "main";
+  if (!state.pools[poolId]) {
+    state.pools[poolId] = defaultPoolState(pools.getPool(poolId) || pools.POOLS.main);
+  }
+  return state.pools[poolId];
 }
 
-function toggleTicker(ticker, enabled) {
-  state.tickers[ticker] = !!enabled;
-  savePersisted();
-  logEvent("TICKER", ticker + " " + (enabled ? "enabled" : "disabled"));
+function getState(poolId) {
+  if (poolId) {
+    if (!pools.isValidPoolId(poolId)) poolId = "main";
+    var ps = poolState(poolId);
+    return {
+      mode: state.mode,
+      poolId: poolId,
+      pool: pools.getPool(poolId),
+      tickers: ps.tickers,
+      scanResults: ps.scanResults,
+      lastAlerts: ps.lastAlerts,
+      lastScan: ps.lastScan,
+      log: state.log
+    };
+  }
+  return {
+    mode: state.mode,
+    pools: state.pools,
+    log: state.log
+  };
 }
 
-function setScanResults(results) {
-  state.scanResults = results;
+function isTickerEnabled(poolId, ticker) {
+  return poolState(poolId).tickers[ticker] !== false;
 }
 
-function getLastAlert(key) {
-  return state.lastAlerts[key] || null;
+function toggleTicker(poolId, ticker, enabled) {
+  poolState(poolId).tickers[ticker] = !!enabled;
+  savePersisted(state);
+  logEvent("TICKER", ticker + " " + (enabled ? "enabled" : "disabled"), poolId);
 }
 
-function setLastAlert(key, time) {
-  state.lastAlerts[key] = time;
-  savePersisted();
+function setScanResults(poolId, results) {
+  var ps = poolState(poolId);
+  ps.scanResults = results;
+  ps.lastScan = new Date().toISOString();
 }
 
-function logEvent(type, message) {
-  var entry = { time: new Date().toISOString(), type: type, message: message };
+function getLastAlert(poolId, key) {
+  return poolState(poolId).lastAlerts[key] || null;
+}
+
+function setLastAlert(poolId, key, time) {
+  poolState(poolId).lastAlerts[key] = time;
+  savePersisted(state);
+}
+
+function logEvent(type, message, poolId) {
+  var prefix = "";
+  if (poolId && pools.isValidPoolId(poolId)) {
+    prefix = "[" + pools.getPool(poolId).shortLabel + "] ";
+  }
+  var entry = { time: new Date().toISOString(), type: type, message: prefix + message, poolId: poolId || null };
   state.log.unshift(entry);
   if (state.log.length > 300) state.log.pop();
-  console.log("[" + type + "] " + message);
+  console.log("[" + type + "] " + entry.message);
 }
 
 module.exports = {
