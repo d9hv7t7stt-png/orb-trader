@@ -207,7 +207,7 @@ app.listen(PORT, () => {
   var spaceDcBook = require("./utils/spaceDcBook");
   var seeded = spaceDcBook.seedSpaceDcBook();
   if (seeded && seeded.seededFromRebalance) {
-    console.log("[Paper] Space DC book: " + Object.keys(seeded.positions).length + " names from 6/30/26 rebalance, cash $" + seeded.cash.toFixed(2));
+    console.log("[Paper] Space DC book: " + Object.keys(seeded.positions).length + " names at April lows, cash $" + seeded.cash.toFixed(2));
   }
   scanner.scheduleScanner();
   discord.scheduleDailySummary();
