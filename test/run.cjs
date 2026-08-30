@@ -82,6 +82,28 @@ async function main() {
     assert.ok(marketHours.msUntilAfterBell() > 0);
   });
 
+  await test("msUntilSundayPremarket hits Sunday 3:00 PM ET", function () {
+    // Sunday Aug 30 2026 2:00 PM ET = 18:00 UTC (EDT)
+    var ms = marketHours.msUntilSundayPremarket(new Date("2026-08-30T18:00:00Z"));
+    assert.ok(ms > 50 * 60 * 1000 && ms < 70 * 60 * 1000, "expected ~1h, got " + ms);
+  });
+
+  await test("msUntilSundayPremarket rolls to next week after 3:00 PM", function () {
+    // Sunday Aug 30 2026 3:01 PM ET = 19:01 UTC → next Sunday Sep 6 3:00 PM ET
+    var ms = marketHours.msUntilSundayPremarket(new Date("2026-08-30T19:01:00Z"));
+    assert.ok(ms > 6.9 * 86400000 && ms < 7.1 * 86400000, "expected ~7d, got " + ms);
+  });
+
+  await test("sundayPremarketLabel is 3:00 PM ET", function () {
+    assert.strictEqual(marketHours.sundayPremarketHour(), 15);
+    assert.strictEqual(marketHours.sundayPremarketLabel(), "3:00 PM ET");
+  });
+
+  await test("etDateKey uses America/New_York", function () {
+    // 2026-08-31 02:00 UTC is still Aug 30 in ET (EDT UTC-4)
+    assert.strictEqual(marketHours.etDateKey(new Date("2026-08-31T02:00:00Z")), "2026-08-30");
+  });
+
   console.log("\nscanner");
   var scanner = require("../utils/scanner");
 
@@ -95,6 +117,15 @@ async function main() {
     return scanner.runScan(false).then(function (result) {
       assert.strictEqual(result.skipped, true);
       assert.strictEqual(result.reason, "outside market hours");
+      marketHours.isMarketHours = orig;
+    });
+  });
+
+  await test("quotes-only scan also skips outside market hours unless forced", function () {
+    var orig = marketHours.isMarketHours;
+    marketHours.isMarketHours = function () { return false; };
+    return scanner.runScan(false, { quotesOnly: true }).then(function (result) {
+      assert.strictEqual(result.skipped, true);
       marketHours.isMarketHours = orig;
     });
   });
@@ -127,9 +158,33 @@ async function main() {
     assert.strictEqual(paper.getOpenPositions("space_dc").length, 1);
   });
 
+  await test("buy refuses a second position in the same ticker", function () {
+    paper.resetPortfolio("main");
+    var first = paper.buy("main", "TEST", "d_ema21", "21D", 100, 5, "test", 500);
+    var second = paper.buy("main", "TEST", "d_sma55", "55D", 100, 5, "test", 500);
+    assert.ok(first);
+    assert.strictEqual(second, null);
+    assert.strictEqual(paper.getOpenPositions("main").length, 1);
+  });
+
   await test("getPositionSizeUSD is at least $100", function () {
     paper.resetPortfolio("main");
     assert.ok(paper.getPositionSizeUSD("main", {}) >= 100);
+  });
+
+  console.log("\ndiscord");
+  var discord = require("../utils/discord");
+
+  await test("Sunday premarket builds one embed per pool", function () {
+    paper.resetPortfolio("main");
+    paper.resetPortfolio("space_dc");
+    var embeds = discord.buildSundayPremarketEmbeds({});
+    assert.strictEqual(embeds.length, 2);
+    assert.ok(embeds[0].title.indexOf("Main") !== -1);
+    assert.ok(embeds[1].title.indexOf("Space DC") !== -1);
+    assert.ok(embeds.every(function (e) { return e.title.indexOf("SUNDAY PREMARKET") !== -1; }));
+    assert.ok(embeds[0].fields.some(function (f) { return f.name === "Equity"; }));
+    assert.ok(embeds[0].description.indexOf("3:00 PM ET") !== -1);
   });
 
   console.log("\nindicators");

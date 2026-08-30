@@ -105,6 +105,7 @@ function getPositionSizeUSD(poolId, livePrices) {
 }
 
 function buy(poolId, ticker, maKey, maLabel, price, shares, reason, riskUsd) {
+  if (hasAnyPosition(poolId, ticker)) return null;
   var portfolio = getPortfolio(poolId);
   var cost = shares * price;
   if (cost > portfolio.cash) {
@@ -238,13 +239,15 @@ function getUnrealizedPnL(poolId, livePrices) {
 }
 
 function getPnlSummary(poolId) {
+  var marketHours = require("./marketHours");
   var portfolio = getPortfolio(poolId);
   var now = new Date();
+  var todayEt = marketHours.etDateKey(now);
   var daily = 0, weekly = 0, monthly = 0, yearly = 0, hasData = false;
   portfolio.trades.filter(function (t) { return t.type === "sell"; }).forEach(function (t) {
     var d = new Date(t.time);
     var pnl = t.pnl || 0;
-    if (d.toDateString() === now.toDateString()) { daily += pnl; hasData = true; }
+    if (marketHours.etDateKey(d) === todayEt) { daily += pnl; hasData = true; }
     var weekAgo = new Date(now); weekAgo.setDate(weekAgo.getDate() - 7);
     if (d >= weekAgo) { weekly += pnl; hasData = true; }
     var monthAgo = new Date(now); monthAgo.setMonth(monthAgo.getMonth() - 1);

@@ -55,10 +55,9 @@ body{
 
 /* Stats */
 .stats{
-  display:grid;grid-template-columns:repeat(2,1fr);gap:10px;
+  display:grid;grid-template-columns:repeat(3,1fr);gap:10px;
   padding:14px 16px 0;
 }
-@media(min-width:640px){.stats{grid-template-columns:repeat(4,1fr)}}
 .stat{
   background:var(--surface);border:1px solid var(--border);
   border-radius:12px;padding:12px 14px;
@@ -228,7 +227,7 @@ body{
     <div class="header-row">
       <div>
         <div class="logo" id="header-logo">ARGUS</div>
-        <div class="logo-sub" id="header-sub">Paper trading</div>
+        <div class="logo-sub" id="header-sub">Scanner</div>
       </div>
       <div class="header-actions">
         <button class="btn" onclick="runScan()">Scan</button>
@@ -240,17 +239,15 @@ body{
 
   <nav class="desktop-nav" id="desktop-nav">
     <button class="dtab active" data-p="scanner">Scanner</button>
-    <button class="dtab" data-p="positions">Positions</button>
     <button class="dtab" data-p="watchlist">Watchlist</button>
     <button class="dtab" data-p="strategy">Rules</button>
     <button class="dtab" data-p="log">Log</button>
   </nav>
 
   <div class="stats">
-    <div class="stat"><div class="stat-l">Equity</div><div class="stat-v" id="s-equity">—</div></div>
-    <div class="stat"><div class="stat-l">Daily P&L</div><div class="stat-v" id="s-daily">—</div></div>
-    <div class="stat"><div class="stat-l">Open</div><div class="stat-v" id="s-open">0</div></div>
     <div class="stat"><div class="stat-l">Near MA</div><div class="stat-v" id="s-near">0</div></div>
+    <div class="stat"><div class="stat-l">Watchlist</div><div class="stat-v" id="s-tickers">0</div></div>
+    <div class="stat"><div class="stat-l">Last Scan</div><div class="stat-v sm" id="s-scan">—</div></div>
   </div>
 
   <main class="main">
@@ -260,14 +257,8 @@ body{
         <button class="filter-btn active" data-f="all" onclick="setFilter('all')">All</button>
         <button class="filter-btn" data-f="near" onclick="setFilter('near')">Near MA</button>
         <button class="filter-btn" data-f="watch" onclick="setFilter('watch')">Sectors</button>
-        <button class="filter-btn" data-f="positions" onclick="setFilter('positions')">Held</button>
       </div>
       <div class="scanner-list" id="scanner-list"></div>
-    </div>
-
-    <div class="page" id="page-positions">
-      <div class="section">Open positions</div>
-      <div class="pos-grid" id="pos-grid"></div>
     </div>
 
     <div class="page" id="page-watchlist">
@@ -299,7 +290,6 @@ body{
 
 <nav class="bottom-nav">
   <button class="nav-btn active" data-p="scanner" onclick="showPage('scanner',this)">Scan</button>
-  <button class="nav-btn" data-p="positions" onclick="showPage('positions',this)">Pos</button>
   <button class="nav-btn" data-p="watchlist" onclick="showPage('watchlist',this)">List</button>
   <button class="nav-btn" data-p="strategy" onclick="showPage('strategy',this)">Rules</button>
   <button class="nav-btn" data-p="log" onclick="showPage('log',this)">Log</button>
@@ -432,20 +422,17 @@ function renderScanner() {
   const poolState = poolData.state || data.state;
   const poolTickers = poolData.tickers || data.tickers || [];
   const nearHits = poolData.near_hits || data.near_hits || [];
-  const positions = poolData.positions || data.positions || [];
   const scan = poolState.scanResults || {};
-  const posTickers = new Set(positions.map(p => p.ticker));
   const nearTickers = new Set(nearHits.map(h => h.ticker));
 
   document.getElementById('s-near').textContent = groupNearHits(nearHits).length;
 
-  const filterLabels = { all: 'All', near: 'Near MA', watch: 'Sectors', positions: 'Held' };
+  const filterLabels = { all: 'All', near: 'Near MA', watch: 'Sectors' };
   document.querySelectorAll('.filter-btn').forEach(el => {
     const f = el.dataset.f;
     let count = poolTickers.length;
     if (f === 'near') count = nearTickers.size;
     else if (f === 'watch') count = poolTickers.filter(isAlertOnly).length;
-    else if (f === 'positions') count = posTickers.size;
     el.innerHTML = filterLabels[f] + (f !== 'all' ? ` <span class="count">${count}</span>` : '');
   });
 
@@ -454,7 +441,6 @@ function renderScanner() {
   const filtered = poolTickers.filter(t => {
     if (scanFilter === 'near') return nearTickers.has(t);
     if (scanFilter === 'watch') return isAlertOnly(t);
-    if (scanFilter === 'positions') return posTickers.has(t);
     return true;
   });
 
@@ -468,7 +454,6 @@ function renderScanner() {
     const r = scan[t];
     const en = poolState.tickers[t] !== false;
     const watch = isAlertOnly(t);
-    const hasPos = posTickers.has(t);
     const nearLevels = (r && r.levels) ? r.levels.filter(l => l.near) : [];
     const isNear = nearLevels.length > 0;
     const expanded = expandedTicker === t;
@@ -482,7 +467,7 @@ function renderScanner() {
     const levelMap = {};
     (r.levels || []).forEach(l => { levelMap[l.key] = l; });
 
-    return `<div class="scan-row ${isNear ? 'near' : ''} ${watch ? 'watch-only' : ''} ${hasPos ? 'has-pos' : ''} ${en ? '' : 'disabled'} ${expanded ? 'expanded' : ''}">
+    return `<div class="scan-row ${isNear ? 'near' : ''} ${watch ? 'watch-only' : ''} ${en ? '' : 'disabled'} ${expanded ? 'expanded' : ''}">
       <div class="scan-main">
         <div class="scan-top">
           <span class="scan-ticker">${t}</span>
@@ -490,7 +475,6 @@ function renderScanner() {
         </div>
         <div class="scan-meta">
           ${watch ? '<span class="badge-watch">Watch only</span>' : ''}
-          ${hasPos ? '<span class="badge-pos">Position</span>' : ''}
           ${!en ? '<span class="scan-label">Disabled</span>' : ''}
         </div>
         ${isNear ? `<div class="scan-signals">${nearLevels.map(l =>
@@ -519,33 +503,18 @@ function render() {
   }
 
   const poolData = (data.pools && data.pools.find(x => x.poolId === activePool)) || data.pool || data;
-  const p = poolData.portfolio || data.portfolio;
   const poolState = poolData.state || data.state;
   const poolTickers = poolData.tickers || data.tickers;
-  const positions = poolData.positions || data.positions || [];
-  const pnl = poolData.pnl || data.pnl;
 
   document.getElementById('header-logo').textContent = 'ARGUS · ' + (poolData.poolLabel || 'Main');
-  document.getElementById('header-sub').textContent = fmt(p.startingBalance, 0) + ' paper · ' + (poolTickers || []).length + ' tickers';
-
-  document.getElementById('s-equity').textContent = fmt(p.equity, 0);
-  const d = document.getElementById('s-daily');
-  d.textContent = pnl && pnl.daily != null ? fmt(pnl.daily, 0) : '—';
-  d.className = 'stat-v' + (pnl && pnl.daily > 0 ? ' pos' : pnl && pnl.daily < 0 ? ' neg' : '');
-  document.getElementById('s-open').textContent = positions.length;
+  document.getElementById('header-sub').textContent = (poolTickers || []).length + ' tickers';
+  document.getElementById('s-tickers').textContent = (poolTickers || []).length;
+  const lastScan = poolState.lastScan;
+  document.getElementById('s-scan').textContent = lastScan
+    ? new Date(lastScan).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    : '—';
 
   renderScanner();
-
-  document.getElementById('pos-grid').innerHTML = positions.length
-    ? positions.map(pos => `<div class="pos-card">
-        <h4>${pos.ticker}<span class="chip near" style="font-size:9px">${pos.maLabel || 'MA entry'}</span></h4>
-        <div class="pos-meta">
-          ${pos.shares} shares · Entry <span>${fmt(pos.entryPrice)}</span> · Now <span>${fmt(pos.currentPrice)}</span><br>
-          P&L <span style="color:${pos.pnl >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(pos.pnl, 0)} (${fmtPct(pos.pct)})</span>
-          ${pos.lastProfitTier ? ' · TP tier ' + pos.lastProfitTier : ''}
-        </div>
-      </div>`).join('')
-    : '<div class="empty-state">No open positions<br><small style="margin-top:6px;display:block">Buys trigger when price nears a moving average</small></div>';
 
   document.getElementById('watchlist-toggles').innerHTML = (poolTickers || []).map(t =>
     `<div class="toggle-row">
@@ -556,17 +525,19 @@ function render() {
 
   const s = data.strategy;
   document.getElementById('strategy-body').innerHTML = `
+    <div class="rule"><strong>Dashboard:</strong> Scanner and watchlist only. Paper P&amp;L lives in Discord.</div>
     <div class="rule"><strong>Data:</strong> ${s.data_source} — scans every 30 min + 4:05 PM ET</div>
     <div class="rule"><strong>Entry:</strong> ${s.entry}</div>
     <div class="rule"><strong>Sector ETFs:</strong> Watch-only — Discord alerts, no paper trades</div>
     <div class="rule"><strong>Size:</strong> ${s.sizing || (data.risk_pct + '% equity')}</div>
     <div class="rule"><strong>Stop:</strong> ${s.exit}</div>
     <div class="rule"><strong>Take profit:</strong> ${s.take_profit}</div>
-    <div class="rule"><strong>MA levels:</strong> ${s.levels.join(' · ')}</div>`;
+    <div class="rule"><strong>MA levels:</strong> ${s.levels.join(' · ')}</div>
+    <div class="rule"><strong>Discord:</strong> After-the-bell (4:05 PM ET weekdays) + Sunday briefing (3:00 PM ET) — paper summary for each pool</div>`;
 
   if (s.discord_roles) {
     document.getElementById('discord-roles').innerHTML = `
-      <div class="rule">Set role IDs in Railway env vars to ping on entries, stops, take-profits, proximity, and daily summary.</div>
+      <div class="rule">Set role IDs in Railway env vars to ping on entries, stops, take-profits, proximity, daily summary, and Sunday premarket.</div>
       <div class="rule"><code style="color:var(--green)">DISCORD_ROLE_ENTRIES</code> · <code style="color:var(--green)">DISCORD_ROLE_STOPS</code> · <code style="color:var(--green)">DISCORD_ROLE_TAKEPROFIT</code></div>
       <div class="rule"><code style="color:var(--green)">DISCORD_ROLE_PROXIMITY</code> · <code style="color:var(--green)">DISCORD_ROLE_DAILY</code></div>`;
   }
