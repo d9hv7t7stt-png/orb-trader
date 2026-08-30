@@ -1,17 +1,28 @@
 var fs = require("fs");
 var tickers = require("./tickers");
+var pools = require("./pools");
 
-var PERSIST_FILE = "/tmp/paper-portfolio.json";
+var LEGACY_FILE = "/tmp/paper-portfolio.json";
 
-function loadPortfolio() {
-  try {
-    if (fs.existsSync(PERSIST_FILE)) {
-      return JSON.parse(fs.readFileSync(PERSIST_FILE, "utf8"));
-    }
-  } catch (e) {}
+function portfolioPath(poolId) {
+  return "/tmp/paper-portfolio-" + poolId + ".json";
+}
+
+function migrateLegacyIfNeeded() {
+  if (!fs.existsSync(LEGACY_FILE)) return;
+  var mainPath = portfolioPath("main");
+  if (!fs.existsSync(mainPath)) {
+    fs.copyFileSync(LEGACY_FILE, mainPath);
+    console.log("[Paper] Migrated legacy portfolio → main pool");
+  }
+}
+
+function defaultPortfolio(poolId) {
+  var pool = pools.getPool(poolId);
   return {
-    cash: tickers.STARTING_BALANCE,
-    startingBalance: tickers.STARTING_BALANCE,
+    poolId: poolId,
+    cash: pool.startingBalance,
+    startingBalance: pool.startingBalance,
     positions: {},
     trades: [],
     wins: 0,
@@ -19,20 +30,35 @@ function loadPortfolio() {
   };
 }
 
-function savePortfolio(p) {
+function loadPortfolio(poolId) {
+  migrateLegacyIfNeeded();
   try {
-    fs.writeFileSync(PERSIST_FILE, JSON.stringify(p));
+    var file = portfolioPath(poolId);
+    if (fs.existsSync(file)) {
+      return JSON.parse(fs.readFileSync(file, "utf8"));
+    }
+  } catch (e) {}
+  return defaultPortfolio(poolId);
+}
+
+function savePortfolio(poolId, portfolio) {
+  try {
+    fs.writeFileSync(portfolioPath(poolId), JSON.stringify(portfolio));
   } catch (e) {}
 }
 
-var portfolio = loadPortfolio();
+var cache = {};
 
-function getPortfolio() { return portfolio; }
+function getPortfolio(poolId) {
+  if (poolId === undefined) poolId = "main";
+  if (!cache[poolId]) cache[poolId] = loadPortfolio(poolId);
+  return cache[poolId];
+}
 
-function getEquity(livePrices) {
+function getEquity(poolId, livePrices) {
+  var portfolio = getPortfolio(poolId);
   var equity = portfolio.cash;
   Object.entries(portfolio.positions).forEach(function (entry) {
-    var key = entry[0];
     var pos = entry[1];
     var px = livePrices && livePrices[pos.ticker] ? livePrices[pos.ticker].price : pos.entryPrice;
     equity += pos.shares * px;
@@ -44,12 +70,12 @@ function positionKey(ticker, maKey) {
   return ticker + ":" + maKey;
 }
 
-function hasPosition(ticker, maKey) {
-  return !!portfolio.positions[positionKey(ticker, maKey)];
+function hasPosition(poolId, ticker, maKey) {
+  return !!getPortfolio(poolId).positions[positionKey(ticker, maKey)];
 }
 
-function getPositionSizeUSD(livePrices) {
-  var equity = getEquity(livePrices);
+function getPositionSizeUSD(poolId, livePrices) {
+  var equity = getEquity(poolId, livePrices);
   var size = equity * tickers.RISK_PCT;
   if (tickers.TRADE_SIZE > 0) {
     size = Math.min(size, tickers.TRADE_SIZE);
@@ -57,7 +83,8 @@ function getPositionSizeUSD(livePrices) {
   return Math.max(100, Math.floor(size));
 }
 
-function buy(ticker, maKey, maLabel, price, shares, reason, riskUsd) {
+function buy(poolId, ticker, maKey, maLabel, price, shares, reason, riskUsd) {
+  var portfolio = getPortfolio(poolId);
   var cost = shares * price;
   if (cost > portfolio.cash) {
     shares = Math.floor(portfolio.cash / price);
@@ -80,6 +107,7 @@ function buy(ticker, maKey, maLabel, price, shares, reason, riskUsd) {
   };
   var trade = {
     type: "buy",
+    poolId: poolId,
     ticker: ticker,
     maKey: maKey,
     maLabel: maLabel,
@@ -92,15 +120,16 @@ function buy(ticker, maKey, maLabel, price, shares, reason, riskUsd) {
   };
   portfolio.trades.unshift(trade);
   if (portfolio.trades.length > 500) portfolio.trades.pop();
-  savePortfolio(portfolio);
+  savePortfolio(poolId, portfolio);
   return trade;
 }
 
-function sellPartial(key, price, sellShares, reason) {
+function sellPartial(poolId, key, price, sellShares, reason) {
+  var portfolio = getPortfolio(poolId);
   var pos = portfolio.positions[key];
   if (!pos || sellShares < 1) return null;
   sellShares = Math.min(sellShares, pos.shares);
-  if (sellShares >= pos.shares) return sell(key, price, reason);
+  if (sellShares >= pos.shares) return sell(poolId, key, price, reason);
 
   var proceeds = sellShares * price;
   var costPortion = pos.costBasis * (sellShares / pos.shares);
@@ -114,6 +143,7 @@ function sellPartial(key, price, sellShares, reason) {
   var trade = {
     type: "sell",
     partial: true,
+    poolId: poolId,
     ticker: pos.ticker,
     maKey: pos.maKey,
     maLabel: pos.maLabel,
@@ -127,11 +157,12 @@ function sellPartial(key, price, sellShares, reason) {
     time: new Date().toISOString()
   };
   portfolio.trades.unshift(trade);
-  savePortfolio(portfolio);
+  savePortfolio(poolId, portfolio);
   return trade;
 }
 
-function sell(key, price, reason) {
+function sell(poolId, key, price, reason) {
+  var portfolio = getPortfolio(poolId);
   var pos = portfolio.positions[key];
   if (!pos) return null;
   var proceeds = pos.shares * price;
@@ -141,6 +172,7 @@ function sell(key, price, reason) {
   if (pnl >= 0) portfolio.wins++; else portfolio.losses++;
   var trade = {
     type: "sell",
+    poolId: poolId,
     ticker: pos.ticker,
     maKey: pos.maKey,
     maLabel: pos.maLabel,
@@ -154,11 +186,12 @@ function sell(key, price, reason) {
   };
   portfolio.trades.unshift(trade);
   delete portfolio.positions[key];
-  savePortfolio(portfolio);
+  savePortfolio(poolId, portfolio);
   return trade;
 }
 
-function getUnrealizedPnL(livePrices) {
+function getUnrealizedPnL(poolId, livePrices) {
+  var portfolio = getPortfolio(poolId);
   var total = 0;
   var details = [];
   Object.entries(portfolio.positions).forEach(function (entry) {
@@ -168,6 +201,7 @@ function getUnrealizedPnL(livePrices) {
     total += pnl;
     details.push({
       key: entry[0],
+      poolId: poolId,
       ticker: pos.ticker,
       maLabel: pos.maLabel,
       shares: pos.shares,
@@ -182,7 +216,8 @@ function getUnrealizedPnL(livePrices) {
   return { total: parseFloat(total.toFixed(2)), details: details };
 }
 
-function getPnlSummary() {
+function getPnlSummary(poolId) {
+  var portfolio = getPortfolio(poolId);
   var now = new Date();
   var daily = 0, weekly = 0, monthly = 0, yearly = 0, hasData = false;
   portfolio.trades.filter(function (t) { return t.type === "sell"; }).forEach(function (t) {
@@ -201,29 +236,53 @@ function getPnlSummary() {
     : { daily: null, weekly: null, monthly: null, yearly: null };
 }
 
-function getOpenPositions() {
-  return Object.entries(portfolio.positions).map(function (entry) {
+function getOpenPositions(poolId) {
+  return Object.entries(getPortfolio(poolId).positions).map(function (entry) {
     return { key: entry[0], pos: entry[1] };
   });
 }
 
-function markProfitTier(key, tier) {
+function markProfitTier(poolId, key, tier) {
+  var portfolio = getPortfolio(poolId);
   if (portfolio.positions[key]) {
     portfolio.positions[key].lastProfitTier = tier;
-    savePortfolio(portfolio);
+    savePortfolio(poolId, portfolio);
   }
 }
 
-function resetPortfolio() {
-  portfolio = {
-    cash: tickers.STARTING_BALANCE,
-    startingBalance: tickers.STARTING_BALANCE,
-    positions: {},
-    trades: [],
-    wins: 0,
-    losses: 0
-  };
-  savePortfolio(portfolio);
+function resetPortfolio(poolId) {
+  cache[poolId] = defaultPortfolio(poolId);
+  savePortfolio(poolId, cache[poolId]);
+}
+
+function resetAllPortfolios() {
+  pools.getAllPools().forEach(function (pool) {
+    resetPortfolio(pool.id);
+  });
+}
+
+function getAllPoolSummaries(livePricesByPool) {
+  return pools.getAllPools().map(function (pool) {
+    var livePrices = (livePricesByPool && livePricesByPool[pool.id]) || {};
+    var p = getPortfolio(pool.id);
+    var equity = getEquity(pool.id, livePrices);
+    var unreal = getUnrealizedPnL(pool.id, livePrices);
+    return {
+      poolId: pool.id,
+      poolLabel: pool.shortLabel,
+      poolName: pool.name,
+      cash: p.cash,
+      startingBalance: p.startingBalance,
+      equity: equity,
+      unrealized: unreal.total,
+      open_positions: Object.keys(p.positions).length,
+      wins: p.wins,
+      losses: p.losses,
+      positions: unreal.details,
+      pnl: getPnlSummary(pool.id),
+      trade_size: getPositionSizeUSD(pool.id, livePrices)
+    };
+  });
 }
 
 module.exports = {
@@ -239,5 +298,7 @@ module.exports = {
   getUnrealizedPnL: getUnrealizedPnL,
   getPnlSummary: getPnlSummary,
   resetPortfolio: resetPortfolio,
+  resetAllPortfolios: resetAllPortfolios,
+  getAllPoolSummaries: getAllPoolSummaries,
   positionKey: positionKey
 };

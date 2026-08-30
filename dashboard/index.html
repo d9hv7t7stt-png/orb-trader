@@ -70,13 +70,18 @@ body{background:var(--bg);color:var(--white);font-family:-apple-system,BlinkMacS
 .desktop-nav{display:none}
 .dtab{font-family:var(--mono);font-size:10px;text-transform:uppercase;background:none;border:none;color:var(--dim);padding:10px 12px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
 .dtab.active{color:var(--green);border-bottom-color:var(--green)}
-.toast{position:fixed;bottom:calc(var(--nav-h) + var(--safe-b) + 12px);left:50%;transform:translateX(-50%);background:var(--surface2);border:1px solid var(--green);color:var(--green);font-family:var(--mono);font-size:11px;padding:8px 16px;border-radius:8px;z-index:999}
+.pool-tabs{display:flex;gap:6px;margin-top:8px}
+.pool-tab{font-family:var(--mono);font-size:9px;letter-spacing:0.08em;text-transform:uppercase;background:var(--surface2);border:1px solid var(--border);color:var(--dim);padding:6px 10px;border-radius:8px;cursor:pointer}
+.pool-tab.active{border-color:var(--green);color:var(--green);background:rgba(0,229,160,0.08)}
 </style>
 </head>
 <body>
 <div class="app">
   <header class="header">
-    <div class="logo">👁 ARGUS STOCK · PAPER $50K</div>
+    <div>
+      <div class="logo" id="header-logo">👁 ARGUS STOCK · PAPER</div>
+      <div class="pool-tabs" id="pool-tabs"></div>
+    </div>
     <div style="display:flex;gap:8px">
       <button class="btn" onclick="runScan()">Scan Now</button>
       <button class="btn primary" onclick="refresh()">Refresh</button>
@@ -148,6 +153,28 @@ body{background:var(--bg);color:var(--white);font-family:-apple-system,BlinkMacS
 <script>
 const BASE = window.location.origin;
 let data = null;
+let activePool = 'main';
+
+function setActivePool(poolId) {
+  activePool = poolId;
+  document.querySelectorAll('.pool-tab').forEach(el => {
+    el.classList.toggle('active', el.dataset.pool === poolId);
+  });
+  if (data && data.pools) {
+    const p = data.pools.find(x => x.poolId === poolId) || data.pool;
+    if (p) {
+      document.getElementById('header-logo').textContent = '👁 ARGUS · ' + p.poolLabel + ' · $' + Math.round(p.startingBalance).toLocaleString('en-US');
+    }
+  }
+  render();
+}
+
+function renderPoolTabs() {
+  if (!data || !data.pools) return;
+  document.getElementById('pool-tabs').innerHTML = data.pools.map(p =>
+    `<button class="pool-tab ${p.poolId === activePool ? 'active' : ''}" data-pool="${p.poolId}" onclick="setActivePool('${p.poolId}')">${p.poolLabel}</button>`
+  ).join('');
+}
 
 function showPage(p, btn) {
   document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
@@ -174,30 +201,40 @@ function maCell(level) {
 
 function render() {
   if (!data) return;
-  const p = data.portfolio;
+  renderPoolTabs();
+  const poolData = (data.pools && data.pools.find(x => x.poolId === activePool)) || data.pool || data;
+  const p = poolData.portfolio || data.portfolio;
+  const poolState = poolData.state || data.state;
+  const poolTickers = poolData.tickers || data.tickers;
+  const nearHits = poolData.near_hits || data.near_hits || [];
+  const positions = poolData.positions || data.positions || [];
+  const pnl = poolData.pnl || data.pnl;
+  const tradeSize = poolData.trade_size != null ? poolData.trade_size : data.trade_size;
+
+  document.getElementById('header-logo').textContent = '👁 ARGUS · ' + (poolData.poolLabel || 'Main') + ' · $' + Math.round(p.startingBalance).toLocaleString('en-US');
   document.getElementById('s-equity').textContent = fmt(p.equity, 0);
   document.getElementById('s-cash').textContent = fmt(p.cash, 0);
   const u = document.getElementById('s-unreal');
   u.textContent = fmt(p.unrealized, 0);
   u.className = 'stat-v' + (p.unrealized > 0 ? ' pos' : p.unrealized < 0 ? ' neg' : '');
   const d = document.getElementById('s-daily');
-  d.textContent = data.pnl.daily != null ? fmt(data.pnl.daily, 0) : '—';
-  d.className = 'stat-v' + (data.pnl.daily > 0 ? ' pos' : data.pnl.daily < 0 ? ' neg' : '');
-  document.getElementById('s-near').textContent = data.near_hits.length;
-  document.getElementById('s-size').textContent = data.trade_size ? fmt(data.trade_size, 0) : '—';
+  d.textContent = pnl && pnl.daily != null ? fmt(pnl.daily, 0) : '—';
+  d.className = 'stat-v' + (pnl && pnl.daily > 0 ? ' pos' : pnl && pnl.daily < 0 ? ' neg' : '');
+  document.getElementById('s-near').textContent = nearHits.length;
+  document.getElementById('s-size').textContent = tradeSize ? fmt(tradeSize, 0) : '—';
 
   const banner = document.getElementById('near-banner');
-  if (data.near_hits.length) {
+  if (nearHits.length) {
     banner.className = 'near-banner';
     banner.innerHTML = '<strong style="color:var(--blue)">Within 1% of MA</strong><br>' +
-      data.near_hits.map(h => `<div class="near-item">${h.ticker} @ ${fmt(h.price)} → ${h.level} (${h.proximity_pct}% away, MA ${fmt(h.ma)})</div>`).join('');
+      nearHits.map(h => `<div class="near-item">${h.ticker} @ ${fmt(h.price)} → ${h.level} (${h.proximity_pct}% away, MA ${fmt(h.ma)})</div>`).join('');
   } else banner.innerHTML = '';
 
-  const scan = data.state.scanResults || {};
+  const scan = poolState.scanResults || {};
   const tbody = document.querySelector('#scanner-table tbody');
-  tbody.innerHTML = (data.tickers || []).map(t => {
+  tbody.innerHTML = (poolTickers || []).map(t => {
     const r = scan[t];
-    const en = data.state.tickers[t] !== false;
+    const en = poolState.tickers[t] !== false;
     if (!r) return `<tr class="${en?'':'disabled'}"><td><strong>${t}</strong></td><td colspan="6" style="color:var(--dim)">Loading…</td></tr>`;
     const levels = {};
     (r.levels||[]).forEach(l => levels[l.key] = l);
@@ -206,15 +243,15 @@ function render() {
       <td>${maCell(levels.w_ema21)}</td><td>${maCell(levels.w_sma50)}</td></tr>`;
   }).join('');
 
-  document.getElementById('pos-grid').innerHTML = (data.positions||[]).length
-    ? data.positions.map(p => `<div class="pos-card"><h4>${p.ticker} · ${p.maLabel}</h4>
+  document.getElementById('pos-grid').innerHTML = positions.length
+    ? positions.map(p => `<div class="pos-card"><h4>${p.ticker} · ${p.maLabel}</h4>
       <div class="pos-meta">Shares <span>${p.shares}</span>${p.totalShares ? ' / ' + p.totalShares : ''} · Entry <span>${fmt(p.entryPrice)}</span> · Now <span>${fmt(p.currentPrice)}</span><br>
       P&L <span style="color:${p.pnl>=0?'var(--green)':'var(--red)'}">${fmt(p.pnl,0)} (${fmtPct(p.pct)})</span>${p.lastProfitTier ? ' · TP tier ' + p.lastProfitTier : ''}</div></div>`).join('')
     : '<p style="color:var(--dim);font-family:var(--mono);font-size:12px">No open positions — scanner will paper-buy when price nears a MA</p>';
 
-  document.getElementById('watchlist-toggles').innerHTML = (data.tickers||[]).map(t =>
+  document.getElementById('watchlist-toggles').innerHTML = (poolTickers||[]).map(t =>
     `<div class="toggle-row"><div><strong>${t}</strong></div>
-    <button class="toggle ${data.state.tickers[t]!==false?'on':''}" onclick="toggle('${t}',${data.state.tickers[t]===false})"></button></div>`
+    <button class="toggle ${poolState.tickers[t]!==false?'on':''}" onclick="toggle('${t}',${poolState.tickers[t]===false})"></button></div>`
   ).join('');
 
   const s = data.strategy;
@@ -225,7 +262,8 @@ function render() {
     <div class="rule"><strong>Stop loss:</strong> ${s.exit || 'Close below 55-Day SMA'}</div>
     <div class="rule"><strong>Take profit:</strong> ${s.take_profit || '+10% sell 25% → +20% sell 25% → +30% exit rest'}</div>
     <div class="rule"><strong>MA levels:</strong> ${s.levels.join(' · ')}</div>
-    <div class="rule"><strong>Account:</strong> ${s.account}</div>`;
+    <div class="rule"><strong>Pools:</strong> ${s.account} — signal-only MA entries (not weight rebalancing)</div>
+    <div class="rule"><strong>Discord:</strong> One channel; alerts prefixed [Main] or [Space DC]</div>`;
 
   if (s.discord_roles) {
     document.getElementById('discord-roles').innerHTML = `
@@ -239,17 +277,19 @@ function render() {
       <div class="rule" style="margin-top:10px;color:var(--dim)">Example: only @Daily for end-of-day, @Traders + @Risk for action items, skip @Alerts if too many pings.</div>`;
   }
 
-  const log = data.state.log || [];
+  const log = data.state && data.state.log ? data.state.log : (poolState.log || []);
   document.getElementById('log-box').innerHTML = log.slice(0,100).map(e => {
     const t = new Date(e.time).toLocaleTimeString('en-US',{hour12:false,hour:'2-digit',minute:'2-digit'});
-    return `<div class="log-row"><span style="color:var(--dim)">${t}</span><span class="log-type ${e.type}">${e.type}</span><span style="color:var(--dim)">${e.message}</span></div>`;
+    const msg = e.message || e.msg || '';
+    return `<div class="log-row"><span style="color:var(--dim)">${t}</span><span class="log-type ${e.type}">${e.type}</span><span style="color:var(--dim)">${msg}</span></div>`;
   }).join('') || '<div style="padding:10px;color:var(--dim)">No activity</div>';
 }
 
 async function refresh() {
   try {
-    const res = await fetch(BASE + '/api/overview');
+    const res = await fetch(BASE + '/api/overview?pool=' + activePool);
     data = await res.json();
+    if (data.activePool) activePool = data.activePool;
     render();
   } catch(e) { toast('Refresh failed'); }
 }
@@ -264,7 +304,7 @@ async function runScan() {
 }
 
 async function toggle(ticker, enabled) {
-  await fetch(BASE + '/api/toggle', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ticker,enabled}) });
+  await fetch(BASE + '/api/toggle', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ticker,enabled,pool:activePool}) });
   refresh();
 }
 

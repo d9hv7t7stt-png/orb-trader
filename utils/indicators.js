@@ -96,8 +96,8 @@ function isNearMA(price, ma, threshold) {
   return proximityPct(price, ma) <= threshold;
 }
 
-async function fetchTickerIndicators(displayTicker) {
-  var yahoo = tickers.getYahooSymbol(displayTicker);
+async function fetchTickerIndicators(displayTicker, resolveYahoo) {
+  var yahoo = resolveYahoo ? resolveYahoo(displayTicker) : tickers.getYahooSymbol(displayTicker);
   var daily = await yahooChart(yahoo, "1d", "2y");
   if (!daily || !daily.bars.length) {
     return { ticker: displayTicker, yahoo: yahoo, error: "no data", price: null, levels: [] };
@@ -133,12 +133,14 @@ async function fetchTickerIndicators(displayTicker) {
   };
 }
 
-async function fetchAllIndicators(tickerList) {
+async function fetchAllIndicators(tickerList, resolveYahoo) {
   var batchSize = 4;
   var results = {};
   for (var i = 0; i < tickerList.length; i += batchSize) {
     var batch = tickerList.slice(i, i + batchSize);
-    var batchResults = await Promise.all(batch.map(fetchTickerIndicators));
+    var batchResults = await Promise.all(batch.map(function (t) {
+      return fetchTickerIndicators(t, resolveYahoo);
+    }));
     batchResults.forEach(function (r) {
       results[r.ticker] = r;
     });
