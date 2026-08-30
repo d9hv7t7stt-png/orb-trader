@@ -125,16 +125,13 @@ body{background:var(--bg);color:var(--white);font-family:-apple-system,BlinkMacS
       <div class="panel-body" id="strategy-body"></div></div>
       <div class="panel"><div class="panel-head"><span class="panel-title">Discord role setup (examples)</span></div>
       <div class="panel-body" id="discord-roles"></div></div>
-      <div class="panel"><div class="panel-head"><span class="panel-title">What you can add next</span></div>
+      <div class="panel"><div class="panel-head"><span class="panel-title">Roadmap</span></div>
       <div class="panel-body">
-        <div class="rule">• <strong>Exit rules</strong> — stop loss % below entry MA, trailing stop, or time-based exits</div>
-        <div class="rule">• <strong>Position sizing</strong> — risk % of equity per trade (set <code>TRADE_SIZE_USD</code> env var now)</div>
         <div class="rule">• <strong>Live broker</strong> — connect Alpaca/IBKR for real stock orders (paper stays default)</div>
         <div class="rule">• <strong>Volume filter</strong> — only enter when volume &gt; 20-day average</div>
         <div class="rule">• <strong>RSI filter</strong> — skip entries if RSI &gt; 70 on daily</div>
         <div class="rule">• <strong>Sector limits</strong> — max % of portfolio per sector ETF</div>
         <div class="rule">• <strong>Earnings blackout</strong> — skip entries ±3 days from earnings</div>
-        <div class="rule">• <strong>Discord @role</strong> — ping a role on proximity alerts</div>
       </div></div>
     </div>
     <div class="page" id="page-log">
@@ -154,6 +151,23 @@ body{background:var(--bg);color:var(--white);font-family:-apple-system,BlinkMacS
 const BASE = window.location.origin;
 let data = null;
 let activePool = 'main';
+let apiKey = sessionStorage.getItem('argus_api_key') || '';
+
+async function apiFetch(url, opts = {}) {
+  opts.headers = opts.headers || {};
+  if (apiKey) opts.headers['x-api-key'] = apiKey;
+  const res = await fetch(url, opts);
+  if (res.status === 401) {
+    const entered = prompt('API key required for this action (set API_KEY in Railway):');
+    if (entered) {
+      apiKey = entered;
+      sessionStorage.setItem('argus_api_key', apiKey);
+      opts.headers['x-api-key'] = apiKey;
+      return fetch(url, opts);
+    }
+  }
+  return res;
+}
 
 function setActivePool(poolId) {
   activePool = poolId;
@@ -259,7 +273,7 @@ function render() {
     <div class="rule"><strong>Data:</strong> ${s.data_source} — scans every 30 min + after the bell (4:05 PM ET)</div>
     <div class="rule"><strong>Entry:</strong> ${s.entry}</div>
     <div class="rule"><strong>Position size:</strong> ${s.sizing || (data.risk_pct + '% of equity')}</div>
-    <div class="rule"><strong>Stop loss:</strong> ${s.exit || 'Close below 55-Day SMA'}</div>
+    <div class="rule"><strong>Stop loss:</strong> ${s.exit || 'Daily close below 55-Day SMA'}</div>
     <div class="rule"><strong>Take profit:</strong> ${s.take_profit || '+10% sell 25% → +20% sell 25% → +30% exit rest'}</div>
     <div class="rule"><strong>MA levels:</strong> ${s.levels.join(' · ')}</div>
     <div class="rule"><strong>Pools:</strong> ${s.account} — signal-only MA entries (not weight rebalancing)</div>
@@ -297,14 +311,14 @@ async function refresh() {
 async function runScan() {
   toast('Scanning…');
   try {
-    await fetch(BASE + '/api/scan', { method: 'POST' });
+    await apiFetch(BASE + '/api/scan', { method: 'POST' });
     await refresh();
     toast('Scan complete');
   } catch(e) { toast('Scan failed'); }
 }
 
 async function toggle(ticker, enabled) {
-  await fetch(BASE + '/api/toggle', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ticker,enabled,pool:activePool}) });
+  await apiFetch(BASE + '/api/toggle', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ticker,enabled,pool:activePool}) });
   refresh();
 }
 

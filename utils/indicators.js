@@ -1,6 +1,27 @@
 var https = require("https");
 var tickers = require("./tickers");
 
+var CACHE_TTL_MS = parseInt(process.env.YAHOO_CACHE_SEC || "300", 10) * 1000;
+var cache = {};
+
+function cacheGet(ticker) {
+  var hit = cache[ticker];
+  if (!hit) return null;
+  if (Date.now() - hit.ts > CACHE_TTL_MS) {
+    delete cache[ticker];
+    return null;
+  }
+  return hit.data;
+}
+
+function cacheSet(ticker, data) {
+  cache[ticker] = { data: data, ts: Date.now() };
+}
+
+function clearCache() {
+  cache = {};
+}
+
 function yahooChart(symbol, interval, range) {
   return new Promise(function (resolve) {
     var path = "/v8/finance/chart/" + encodeURIComponent(symbol)
@@ -15,6 +36,7 @@ function yahooChart(symbol, interval, range) {
       r.on("data", function (c) { raw += c; });
       r.on("end", function () {
         try {
+          if (r.statusCode && r.statusCode >= 400) return resolve(null);
           var parsed = JSON.parse(raw);
           var result = parsed.chart && parsed.chart.result && parsed.chart.result[0];
           if (!result) return resolve(null);
@@ -60,27 +82,6 @@ function ema(values, period) {
   return emaVal;
 }
 
-function aggregateWeekly(dailyBars) {
-  var weeks = [];
-  var bucket = null;
-  var bucketKey = null;
-  dailyBars.forEach(function (bar) {
-    var d = new Date(bar.time * 1000);
-    var key = d.getUTCFullYear() + "-W" + Math.floor((d.getUTCDate() - 1) / 7 + d.getUTCMonth() * 4);
-    key = d.getUTCFullYear() + "-" + d.getUTCMonth() + "-" + Math.floor(d.getUTCDate() / 7);
-    if (key !== bucketKey) {
-      if (bucket) weeks.push(bucket);
-      bucketKey = key;
-      bucket = { time: bar.time, close: bar.close };
-    } else {
-      bucket.close = bar.close;
-      bucket.time = bar.time;
-    }
-  });
-  if (bucket) weeks.push(bucket);
-  return weeks;
-}
-
 function computeMA(closes, level) {
   if (level.type === "sma") return sma(closes, level.period);
   return ema(closes, level.period);
@@ -96,17 +97,31 @@ function isNearMA(price, ma, threshold) {
   return proximityPct(price, ma) <= threshold;
 }
 
-async function fetchTickerIndicators(displayTicker, resolveYahoo) {
+function completedDailyClose(dailyBars, marketOpen) {
+  if (!dailyBars.length) return null;
+  if (marketOpen && dailyBars.length >= 2) {
+    return dailyBars[dailyBars.length - 2].close;
+  }
+  return dailyBars[dailyBars.length - 1].close;
+}
+
+async function fetchTickerIndicators(displayTicker, resolveYahoo, marketOpen) {
+  var cached = cacheGet(displayTicker);
+  if (cached) return cached;
+
   var yahoo = resolveYahoo ? resolveYahoo(displayTicker) : tickers.getYahooSymbol(displayTicker);
   var daily = await yahooChart(yahoo, "1d", "2y");
   if (!daily || !daily.bars.length) {
     return { ticker: displayTicker, yahoo: yahoo, error: "no data", price: null, levels: [] };
   }
 
+  var weekly = await yahooChart(yahoo, "1wk", "5y");
   var dailyCloses = daily.bars.map(function (b) { return b.close; });
   var price = daily.price || dailyCloses[dailyCloses.length - 1];
-  var weeklyBars = aggregateWeekly(daily.bars);
-  var weeklyCloses = weeklyBars.map(function (b) { return b.close; });
+  var stopPrice = completedDailyClose(daily.bars, marketOpen);
+  var weeklyCloses = weekly && weekly.bars.length
+    ? weekly.bars.map(function (b) { return b.close; })
+    : [];
 
   var levels = tickers.MA_LEVELS.map(function (level) {
     var closes = level.timeframe === "weekly" ? weeklyCloses : dailyCloses;
@@ -124,27 +139,36 @@ async function fetchTickerIndicators(displayTicker, resolveYahoo) {
     };
   });
 
-  return {
+  var result = {
     ticker: displayTicker,
     yahoo: yahoo,
     price: parseFloat(price.toFixed(4)),
+    stopPrice: stopPrice != null ? parseFloat(stopPrice.toFixed(4)) : null,
     levels: levels,
     updated: new Date().toISOString()
   };
+  cacheSet(displayTicker, result);
+  return result;
 }
 
-async function fetchAllIndicators(tickerList, resolveYahoo) {
+async function fetchAllIndicators(tickerList, resolveYahoo, marketOpen) {
+  var unique = [];
+  var seen = {};
+  tickerList.forEach(function (t) {
+    if (!seen[t]) { seen[t] = true; unique.push(t); }
+  });
+
   var batchSize = 4;
   var results = {};
-  for (var i = 0; i < tickerList.length; i += batchSize) {
-    var batch = tickerList.slice(i, i + batchSize);
+  for (var i = 0; i < unique.length; i += batchSize) {
+    var batch = unique.slice(i, i + batchSize);
     var batchResults = await Promise.all(batch.map(function (t) {
-      return fetchTickerIndicators(t, resolveYahoo);
+      return fetchTickerIndicators(t, resolveYahoo, marketOpen);
     }));
     batchResults.forEach(function (r) {
       results[r.ticker] = r;
     });
-    if (i + batchSize < tickerList.length) {
+    if (i + batchSize < unique.length) {
       await new Promise(function (r) { setTimeout(r, 300); });
     }
   }
@@ -155,5 +179,6 @@ module.exports = {
   fetchTickerIndicators: fetchTickerIndicators,
   fetchAllIndicators: fetchAllIndicators,
   isNearMA: isNearMA,
-  proximityPct: proximityPct
+  proximityPct: proximityPct,
+  clearCache: clearCache
 };

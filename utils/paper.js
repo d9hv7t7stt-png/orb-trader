@@ -1,24 +1,32 @@
 var fs = require("fs");
 var tickers = require("./tickers");
 var pools = require("./pools");
+var paths = require("./paths");
 
-var LEGACY_FILE = "/tmp/paper-portfolio.json";
+var LEGACY_FILE = paths.dataPath("paper-portfolio.json");
 
 function portfolioPath(poolId) {
-  return "/tmp/paper-portfolio-" + poolId + ".json";
+  return paths.dataPath("paper-portfolio-" + poolId + ".json");
 }
 
+var legacyMigrated = false;
 function migrateLegacyIfNeeded() {
-  if (!fs.existsSync(LEGACY_FILE)) return;
-  var mainPath = portfolioPath("main");
-  if (!fs.existsSync(mainPath)) {
-    fs.copyFileSync(LEGACY_FILE, mainPath);
+  if (legacyMigrated) return;
+  legacyMigrated = true;
+  var oldTmp = "/tmp/paper-portfolio.json";
+  if (!fs.existsSync(LEGACY_FILE) && fs.existsSync(oldTmp)) {
+    paths.ensureDataDir();
+    fs.copyFileSync(oldTmp, LEGACY_FILE);
+    console.log("[Paper] Migrated legacy portfolio from /tmp");
+  }
+  if (!fs.existsSync(portfolioPath("main")) && fs.existsSync(LEGACY_FILE)) {
+    fs.copyFileSync(LEGACY_FILE, portfolioPath("main"));
     console.log("[Paper] Migrated legacy portfolio → main pool");
   }
 }
 
 function defaultPortfolio(poolId) {
-  var pool = pools.getPool(poolId);
+  var pool = pools.getPool(poolId) || pools.POOLS.main;
   return {
     poolId: poolId,
     cash: pool.startingBalance,
@@ -30,21 +38,28 @@ function defaultPortfolio(poolId) {
   };
 }
 
+paths.ensureDataDir();
+migrateLegacyIfNeeded();
+
 function loadPortfolio(poolId) {
-  migrateLegacyIfNeeded();
   try {
     var file = portfolioPath(poolId);
     if (fs.existsSync(file)) {
       return JSON.parse(fs.readFileSync(file, "utf8"));
     }
-  } catch (e) {}
+  } catch (e) {
+    console.error("[Paper] Load error (" + poolId + "):", e.message);
+  }
   return defaultPortfolio(poolId);
 }
 
 function savePortfolio(poolId, portfolio) {
   try {
+    paths.ensureDataDir();
     fs.writeFileSync(portfolioPath(poolId), JSON.stringify(portfolio));
-  } catch (e) {}
+  } catch (e) {
+    console.error("[Paper] Save error (" + poolId + "):", e.message);
+  }
 }
 
 var cache = {};
@@ -72,6 +87,12 @@ function positionKey(ticker, maKey) {
 
 function hasPosition(poolId, ticker, maKey) {
   return !!getPortfolio(poolId).positions[positionKey(ticker, maKey)];
+}
+
+function hasAnyPosition(poolId, ticker) {
+  return getOpenPositions(poolId).some(function (entry) {
+    return entry.pos.ticker === ticker;
+  });
 }
 
 function getPositionSizeUSD(poolId, livePrices) {
@@ -291,6 +312,7 @@ module.exports = {
   getPositionSizeUSD: getPositionSizeUSD,
   getOpenPositions: getOpenPositions,
   hasPosition: hasPosition,
+  hasAnyPosition: hasAnyPosition,
   buy: buy,
   sell: sell,
   sellPartial: sellPartial,

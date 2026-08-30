@@ -4,15 +4,10 @@ var tickers = require("./tickers");
 var state = require("./state");
 var discord = require("./discord");
 var pools = require("./pools");
+var marketHours = require("./marketHours");
 
 var ALERT_COOLDOWN_MS = parseInt(process.env.ALERT_COOLDOWN_MIN || "60", 10) * 60 * 1000;
 var scanning = false;
-
-function isMarketHours() {
-  var now = new Date();
-  var utc = now.getUTCHours() * 60 + now.getUTCMinutes();
-  return utc >= 14 * 60 + 30 && utc <= 21 * 60;
-}
 
 function canAlert(poolId, ticker, maKey) {
   var key = ticker + ":" + maKey;
@@ -25,36 +20,33 @@ function markAlert(poolId, ticker, maKey) {
   state.setLastAlert(poolId, ticker + ":" + maKey, new Date().toISOString());
 }
 
-async function processStopLosses(poolId, results) {
+function processStopLosses(poolId, results) {
   var exits = 0;
-  var livePrices = {};
-  Object.values(results).forEach(function (r) {
-    if (r && r.price) livePrices[r.ticker] = { price: r.price };
-  });
 
   paper.getOpenPositions(poolId).forEach(function (entry) {
     var key = entry.key;
     var pos = entry.pos;
     var data = results[pos.ticker];
-    if (!data || !data.price || !data.levels) return;
+    if (!data || !data.levels) return;
 
     var sma55 = data.levels.find(function (l) { return l.key === tickers.STOP_MA_KEY; });
     if (!sma55 || sma55.value == null) return;
 
-    if (data.price < sma55.value) {
-      var trade = paper.sell(poolId, key, data.price, "Stop loss — close below 55-Day SMA ($" + sma55.value.toFixed(2) + ")");
-      if (trade) {
-        exits++;
-        state.logEvent("STOP_LOSS", pos.ticker + " sold @ $" + data.price + " (below 55 SMA $" + sma55.value.toFixed(2) + ")", poolId);
-        discord.postStockExit(poolId, pos.ticker, pos.maLabel, data.price, trade.pnl, trade.pct, trade.reason, "stop").catch(function () {});
-      }
+    var checkPrice = data.stopPrice != null ? data.stopPrice : data.price;
+    if (checkPrice == null || checkPrice >= sma55.value) return;
+
+    var trade = paper.sell(poolId, key, data.price, "Stop loss — daily close below 55-Day SMA ($" + sma55.value.toFixed(2) + ", close $" + checkPrice.toFixed(2) + ")");
+    if (trade) {
+      exits++;
+      state.logEvent("STOP_LOSS", pos.ticker + " sold @ $" + data.price + " (daily close $" + checkPrice + " below 55 SMA $" + sma55.value.toFixed(2) + ")", poolId);
+      discord.postStockExit(poolId, pos.ticker, pos.maLabel, data.price, trade.pnl, trade.pct, trade.reason, "stop").catch(function () {});
     }
   });
 
   return exits;
 }
 
-async function processTakeProfits(poolId, results) {
+function processTakeProfits(poolId, results) {
   var tpExits = 0;
 
   paper.getOpenPositions(poolId).forEach(function (entry) {
@@ -102,7 +94,7 @@ async function processTakeProfits(poolId, results) {
   return tpExits;
 }
 
-async function processTicker(poolId, data, livePrices) {
+function processTicker(poolId, data, livePrices) {
   if (data.error || !data.price) return { alerts: 0, entries: 0 };
 
   var ticker = data.ticker;
@@ -110,6 +102,7 @@ async function processTicker(poolId, data, livePrices) {
 
   var alerts = 0;
   var entries = 0;
+  var alreadyInTicker = paper.hasAnyPosition(poolId, ticker);
 
   data.levels.forEach(function (level) {
     if (!level.near || level.value == null) return;
@@ -121,12 +114,14 @@ async function processTicker(poolId, data, livePrices) {
       discord.postProximityAlert(poolId, ticker, data.price, level).catch(function () {});
     }
 
+    if (alreadyInTicker) return;
     if (!paper.hasPosition(poolId, ticker, level.key)) {
       var riskUsd = paper.getPositionSizeUSD(poolId, livePrices);
       var shares = Math.floor(riskUsd / data.price);
       var trade = paper.buy(poolId, ticker, level.key, level.label, data.price, shares, "MA proximity entry", riskUsd);
       if (trade) {
         entries++;
+        alreadyInTicker = true;
         state.logEvent("STOCK_BUY", ticker + " " + shares + "sh @ $" + data.price + " (" + level.label + ", " + riskUsd + " risk)", poolId);
         discord.postStockEntry(poolId, ticker, level.label, data.price, shares, trade.total, level.proximity_pct, riskUsd).catch(function () {});
       }
@@ -136,13 +131,14 @@ async function processTicker(poolId, data, livePrices) {
   return { alerts: alerts, entries: entries };
 }
 
-async function runPoolScan(poolId, force) {
+function runPoolScan(poolId, allResults, marketOpen) {
   var pool = pools.getPool(poolId);
   var list = pool.getTickers().filter(function (t) { return state.isTickerEnabled(poolId, t); });
   state.logEvent("SCAN", "Scanning " + list.length + " tickers…", poolId);
 
-  var results = await indicators.fetchAllIndicators(list, function (ticker) {
-    return pools.getYahooSymbol(poolId, ticker);
+  var results = {};
+  list.forEach(function (t) {
+    if (allResults[t]) results[t] = allResults[t];
   });
   state.setScanResults(poolId, results);
 
@@ -151,8 +147,8 @@ async function runPoolScan(poolId, force) {
     if (r && r.price) livePrices[r.ticker] = { price: r.price };
   });
 
-  var totalExits = await processStopLosses(poolId, results);
-  var totalTakeProfits = await processTakeProfits(poolId, results);
+  var totalExits = processStopLosses(poolId, results);
+  var totalTakeProfits = processTakeProfits(poolId, results);
 
   var totalAlerts = 0;
   var totalEntries = 0;
@@ -162,7 +158,7 @@ async function runPoolScan(poolId, force) {
     var t = list[i];
     var data = results[t];
     if (!data) continue;
-    var out = await processTicker(poolId, data, livePrices);
+    var out = processTicker(poolId, data, livePrices);
     totalAlerts += out.alerts;
     totalEntries += out.entries;
     if (data.levels) {
@@ -191,18 +187,33 @@ async function runPoolScan(poolId, force) {
 
 async function runScan(force) {
   if (scanning) return { skipped: true, reason: "scan in progress" };
-  if (!force && !isMarketHours()) {
+  if (!force && !marketHours.isMarketHours()) {
     return { skipped: true, reason: "outside market hours" };
   }
 
   scanning = true;
   var start = Date.now();
   try {
-    var poolResults = [];
-    for (var i = 0; i < pools.getAllPools().length; i++) {
-      var pool = pools.getAllPools()[i];
-      poolResults.push(await runPoolScan(pool.id, force));
-    }
+    var marketOpen = marketHours.isMarketHours();
+    var allTickers = [];
+    var seen = {};
+    pools.getAllPools().forEach(function (pool) {
+      pool.getTickers().forEach(function (t) {
+        if (!seen[t]) { seen[t] = true; allTickers.push(t); }
+      });
+    });
+
+    var allResults = await indicators.fetchAllIndicators(
+      allTickers,
+      tickers.getYahooSymbol,
+      marketOpen
+    );
+
+    var poolResults = await Promise.all(
+      pools.getAllPools().map(function (pool) {
+        return Promise.resolve(runPoolScan(pool.id, allResults, marketOpen));
+      })
+    );
 
     return {
       ok: true,

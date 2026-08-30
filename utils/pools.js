@@ -30,7 +30,11 @@ var POOLS = {
 };
 
 function getPool(poolId) {
-  return POOLS[poolId] || POOLS.main;
+  return POOLS[poolId] || null;
+}
+
+function isValidPoolId(poolId) {
+  return !!POOLS[poolId];
 }
 
 function getAllPools() {
@@ -38,7 +42,7 @@ function getAllPools() {
 }
 
 function getYahooSymbol(poolId, ticker) {
-  var pool = getPool(poolId);
+  var pool = getPool(poolId) || POOLS.main;
   if (pool.yahooMap && pool.yahooMap[ticker]) return pool.yahooMap[ticker];
   return tickers.getYahooSymbol(ticker);
 }
@@ -46,6 +50,7 @@ function getYahooSymbol(poolId, ticker) {
 module.exports = {
   POOLS: POOLS,
   getPool: getPool,
+  isValidPoolId: isValidPoolId,
   getAllPools: getAllPools,
   getYahooSymbol: getYahooSymbol,
   SPACE_DC_TICKERS: SPACE_DC_TICKERS
