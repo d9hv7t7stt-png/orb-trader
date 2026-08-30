@@ -94,91 +94,13 @@ function formatPct(n) {
 }
 
 function formatMaPrice(v) {
-  return v != null ? formatMoney(v) : "—";
+  return v != null ? formatMoney(v) : "n/a";
 }
 
 function levelValue(scanRow, key) {
   if (!scanRow || !scanRow.levels) return null;
   var found = scanRow.levels.find(function (l) { return l.key === key; });
   return found && found.value != null ? found.value : null;
-}
-
-var TABLE_PAD = 2;
-
-function cellText(value) {
-  if (value == null || value === "") return "-";
-  return String(value);
-}
-
-function padCell(text, width, align) {
-  text = cellText(text);
-  if (text.length > width) text = text.slice(0, width);
-  return align === "right" ? text.padStart(width) : text.padEnd(width);
-}
-
-function columnWidths(headers, rows) {
-  return headers.map(function (h, i) {
-    var w = cellText(h).length + 2;
-    rows.forEach(function (row) {
-      w = Math.max(w, cellText(row[i]).length);
-    });
-    return w;
-  });
-}
-
-function tableBorder(widths, left, mid, right, fill) {
-  return left + widths.map(function (w) { return fill.repeat(w + TABLE_PAD * 2); }).join(mid) + right;
-}
-
-function tableRow(cells, widths, aligns) {
-  var pad = " ".repeat(TABLE_PAD);
-  return "│" + cells.map(function (c, i) {
-    return pad + padCell(c, widths[i], aligns && aligns[i]) + pad;
-  }).join("│") + "│";
-}
-
-function wrapCodeBlock(text) {
-  return "```\n" + text + "\n```";
-}
-
-function fieldsFromTable(baseName, headers, rows, aligns) {
-  var limit = 1024;
-  var widths = columnWidths(headers, rows);
-  var top = tableBorder(widths, "┌", "┬", "┐", "─");
-  var mid = tableBorder(widths, "├", "┼", "┤", "─");
-  var bot = tableBorder(widths, "└", "┴", "┘", "─");
-  var head = tableRow(headers, widths, aligns);
-  var data = rows.map(function (row) { return tableRow(row, widths, aligns); });
-  var frame = wrapCodeBlock([top, head, mid, bot].join("\n")).length;
-  var available = Math.max(80, limit - frame - 1);
-
-  var chunks = [];
-  var buf = [];
-  var len = 0;
-  function flush() {
-    if (!buf.length) return;
-    var body = [top, head, mid].concat(buf).concat([bot]).join("\n");
-    chunks.push(wrapCodeBlock(body));
-    buf = [];
-    len = 0;
-  }
-  data.forEach(function (line) {
-    var add = (buf.length ? 1 : 0) + line.length;
-    if (buf.length && len + add > available) flush();
-    buf.push(line);
-    len += add;
-  });
-  flush();
-  if (!chunks.length) {
-    chunks.push(wrapCodeBlock([top, head, mid, bot].join("\n")));
-  }
-  return chunks.map(function (value, i) {
-    return {
-      name: i === 0 ? baseName : baseName + " (" + (i + 1) + ")",
-      value: value,
-      inline: false
-    };
-  });
 }
 
 function fieldsFromLines(baseName, lines, limit) {
@@ -219,9 +141,7 @@ function buildSpaceDcWatchlistFields(livePrices, scanResults) {
   var byTicker = spaceDcBook.positionByTicker(p);
   livePrices = livePrices || {};
   scanResults = scanResults || {};
-  var headers = ["TICK", "CLOSE", "21", "55", "SH", "ENTRY", "P&L"];
-  var aligns = ["left", "right", "right", "right", "right", "right", "right"];
-  var rows = [];
+  var lines = [];
 
   spaceDcBook.watchlistTickers().forEach(function (ticker) {
     var row = scanResults[ticker] || {};
@@ -235,50 +155,36 @@ function buildSpaceDcWatchlistFields(livePrices, scanResults) {
       var mark = close != null ? close : pos.entryPrice;
       var pnl = (mark - pos.entryPrice) * pos.shares;
       var pct = pos.entryPrice ? ((mark - pos.entryPrice) / pos.entryPrice) * 100 : 0;
-      var pnlStr = (pnl > 0 ? "+" : "") + formatMoney(pnl) + " (" + formatPct(pct) + ")";
-      rows.push([
-        ticker,
-        formatMaPrice(close),
-        formatMaPrice(levelValue(row, "d_ema21")),
-        formatMaPrice(levelValue(row, "d_sma55")),
-        String(pos.shares),
-        formatMoney(pos.entryPrice),
-        pnlStr
-      ]);
+      var pnlStr = (pnl > 0 ? "+" : "") + formatMoney(pnl);
+      lines.push(
+        "$" + ticker
+          + " - " + formatMaPrice(close)
+          + " - " + pos.shares + " Shares"
+          + " - " + formatMoney(pos.entryPrice)
+          + " - " + pnlStr + " (" + formatPct(pct) + ")"
+      );
     } else {
-      rows.push([
-        ticker,
-        formatMaPrice(close),
-        formatMaPrice(levelValue(row, "d_ema21")),
-        formatMaPrice(levelValue(row, "d_sma55")),
-        "-",
-        "-",
-        "-"
-      ]);
+      lines.push("$" + ticker + " - " + formatMaPrice(close) + " - 0 Shares");
     }
   });
-  rows.push(["CASH", formatMoney(p.cash), "-", "-", "-", "-", "-"]);
+  lines.push("$CASH - " + formatMoney(p.cash));
   spaceDcBook.SOLD.forEach(function (sold) {
-    rows.push([sold.ticker, "Sold @ $54", "-", "-", "-", "-", "-"]);
+    lines.push("$" + sold.ticker + " - Sold @ $54");
   });
-  return fieldsFromTable("Watchlist", headers, rows, aligns);
+  return fieldsFromLines("Watchlist", lines);
 }
 
 function buildMainWatchlistFields(scanResults) {
   var tickersMod = require("./tickers");
   scanResults = scanResults || {};
-  var aligns = ["left", "right", "right", "right"];
-  var headers = ["TICK", "CLOSE", "21", "55"];
-  var rows = tickersMod.getMainBriefingTickers().map(function (ticker) {
+  var lines = tickersMod.getMainBriefingTickers().map(function (ticker) {
     var row = scanResults[ticker] || {};
-    return [
-      tickersMod.getDisplayTicker(ticker),
-      formatMaPrice(priorClose(row, null)),
-      formatMaPrice(levelValue(row, "d_ema21")),
-      formatMaPrice(levelValue(row, "d_sma55"))
-    ];
+    return "$" + tickersMod.getDisplayTicker(ticker)
+      + " - " + formatMaPrice(priorClose(row, null))
+      + " - 21 " + formatMaPrice(levelValue(row, "d_ema21"))
+      + " - 55 " + formatMaPrice(levelValue(row, "d_sma55"));
   });
-  return fieldsFromTable("Watchlist", headers, rows, aligns);
+  return fieldsFromLines("Watchlist", lines);
 }
 
 function livePricesFromState() {
