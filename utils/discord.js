@@ -103,6 +103,60 @@ function levelValue(scanRow, key) {
   return found && found.value != null ? found.value : null;
 }
 
+var COL_TICK = 7;
+var COL_PX = 10;
+var COL_SHARES = 7;
+var COL_PNL = 12;
+var COL_PCT = 8;
+
+function padRight(text, width) {
+  text = String(text);
+  return text.length >= width ? text : text.padEnd(width);
+}
+
+function padLeft(text, width) {
+  text = String(text);
+  return text.length >= width ? text : text.padStart(width);
+}
+
+function tickerCol(label) {
+  return padRight(label, COL_TICK);
+}
+
+function priceCol(value) {
+  return padLeft(typeof value === "string" ? value : formatMaPrice(value), COL_PX);
+}
+
+function fieldsFromCodeLines(baseName, lines, header) {
+  var limit = 1024;
+  var fields = [];
+  var buf = [];
+  var len = 0;
+  var fence = 8;
+  var headerBlock = header ? header + "\n" : "";
+  var available = limit - fence - headerBlock.length;
+
+  function flush() {
+    if (!buf.length) return;
+    fields.push({
+      name: fields.length === 0 ? baseName : baseName + " (" + (fields.length + 1) + ")",
+      value: "```\n" + headerBlock + buf.join("\n") + "\n```",
+      inline: false
+    });
+    buf = [];
+    len = 0;
+  }
+
+  lines.forEach(function (line) {
+    var add = (buf.length ? 1 : 0) + line.length;
+    if (buf.length && len + add > available) flush();
+    buf.push(line);
+    len += add;
+  });
+  flush();
+  return fields;
+}
+
 function fieldsFromLines(baseName, lines, limit) {
   limit = limit || 1024;
   var fields = [];
@@ -157,21 +211,26 @@ function buildSpaceDcWatchlistFields(livePrices, scanResults) {
       var pct = pos.entryPrice ? ((mark - pos.entryPrice) / pos.entryPrice) * 100 : 0;
       var pnlStr = (pnl > 0 ? "+" : "") + formatMoney(pnl);
       lines.push(
-        "$" + ticker
-          + " - " + formatMaPrice(close)
-          + " - " + pos.shares + " Shares"
-          + " - " + formatMoney(pos.entryPrice)
-          + " - " + pnlStr + " (" + formatPct(pct) + ")"
+        tickerCol("$" + ticker)
+          + "  " + priceCol(close)
+          + "  " + padLeft(pos.shares + " sh", COL_SHARES)
+          + "  " + priceCol(formatMoney(pos.entryPrice))
+          + "  " + padLeft(pnlStr, COL_PNL)
+          + "  " + padLeft("(" + formatPct(pct) + ")", COL_PCT)
       );
     } else {
-      lines.push("$" + ticker + " - " + formatMaPrice(close) + " - 0 Shares");
+      lines.push(tickerCol("$" + ticker) + "  " + priceCol(close) + "  " + padLeft("0 sh", COL_SHARES));
     }
   });
-  lines.push("$CASH - " + formatMoney(p.cash));
+  lines.push(tickerCol("$CASH") + "  " + priceCol(formatMoney(p.cash)));
   spaceDcBook.SOLD.forEach(function (sold) {
-    lines.push("$" + sold.ticker + " - Sold @ $54");
+    lines.push(tickerCol("$" + sold.ticker) + "  Sold @ $54");
   });
-  return fieldsFromLines("Watchlist", lines);
+  return fieldsFromCodeLines(
+    "Watchlist",
+    lines,
+    tickerCol("TICK") + "  " + padLeft("CLOSE", COL_PX) + "  " + padLeft("SHARES", COL_SHARES) + "  " + padLeft("ENTRY", COL_PX) + "  " + padLeft("P&L", COL_PNL) + "  " + padLeft("%", COL_PCT)
+  );
 }
 
 function buildMainWatchlistFields(scanResults) {
@@ -179,12 +238,12 @@ function buildMainWatchlistFields(scanResults) {
   scanResults = scanResults || {};
   var lines = tickersMod.getMainBriefingTickers().map(function (ticker) {
     var row = scanResults[ticker] || {};
-    return "$" + tickersMod.getDisplayTicker(ticker)
-      + " - " + formatMaPrice(priorClose(row, null))
-      + " - 21 " + formatMaPrice(levelValue(row, "d_ema21"))
-      + " - 55 " + formatMaPrice(levelValue(row, "d_sma55"));
+    return tickerCol("$" + tickersMod.getDisplayTicker(ticker))
+      + "  " + priceCol(priorClose(row, null))
+      + "  21D: " + priceCol(levelValue(row, "d_ema21"))
+      + "  55D: " + priceCol(levelValue(row, "d_sma55"));
   });
-  return fieldsFromLines("Watchlist", lines);
+  return fieldsFromCodeLines("Watchlist", lines);
 }
 
 function livePricesFromState() {

@@ -315,9 +315,13 @@ async function main() {
       var label = tickers.getDisplayTicker(t);
       assert.ok(watch.indexOf(label) !== -1, "missing " + label);
     });
-    assert.ok(watch.indexOf("```") === -1);
+    assert.ok(watch.indexOf("```") !== -1);
     assert.ok(watch.indexOf("│") === -1 && watch.indexOf("┼") === -1);
-    assert.ok(watch.indexOf("$SPX - $7,680.00 - 21 $7,669.00 - 55 $7,400.00") !== -1);
+    assert.ok(watch.indexOf("21D:") !== -1 && watch.indexOf("55D:") !== -1);
+    assert.ok(watch.indexOf("$SPX") !== -1);
+    assert.ok(watch.indexOf("$7,680.00") !== -1);
+    assert.ok(watch.indexOf("$7,669.00") !== -1);
+    assert.ok(watch.indexOf("$7,400.00") !== -1);
     assert.ok(watch.indexOf("SPXW") === -1);
     assert.ok(watch.indexOf("21-Week") === -1);
     assert.ok(watch.indexOf("200-Day") === -1);
@@ -330,6 +334,16 @@ async function main() {
     assert.ok(spxAt < spyAt && spyAt < nvdaAt && nvdaAt < xlbAt && xlbAt < xlyAt);
     assert.ok(watch.indexOf("$AAPL") !== -1);
     assert.ok(watch.indexOf("$XLU") !== -1);
+    var aligned = watch.replace(/```/g, "").split("\n").filter(function (line) {
+      return line.indexOf("21D:") !== -1;
+    });
+    assert.ok(aligned.length >= 10);
+    var col21 = aligned[0].indexOf("21D:");
+    var col55 = aligned[0].indexOf("55D:");
+    aligned.forEach(function (line) {
+      assert.strictEqual(line.indexOf("21D:"), col21, "21D: drifted: " + line);
+      assert.strictEqual(line.indexOf("55D:"), col55, "55D: drifted: " + line);
+    });
     main.fields.filter(function (f) { return f.name.indexOf("Watchlist") === 0; }).forEach(function (f) {
       assert.ok(f.value.length <= 1024, "embed field too long: " + f.value.length);
     });
@@ -357,12 +371,16 @@ async function main() {
     }).find(function (e) { return e.title.indexOf("Space DC") !== -1; });
     var blob = space.fields.map(function (f) { return f.name + "\n" + f.value; }).join("\n");
     pools.SPACE_DC_TICKERS.forEach(function (t) {
-      assert.ok(blob.indexOf("$" + t + " - ") !== -1, "missing $" + t);
+      assert.ok(blob.indexOf("$" + t) !== -1, "missing $" + t);
     });
-    assert.ok(blob.indexOf("```") === -1 && blob.indexOf("│") === -1);
-    assert.ok(blob.indexOf("$NVDA - $49.25 - 160 Shares - $197.94 - ") !== -1);
-    assert.ok(blob.indexOf("$CASH - ") !== -1);
-    assert.ok(blob.indexOf("$IRDM - Sold @ $54") !== -1);
+    assert.ok(blob.indexOf("```") !== -1 && blob.indexOf("│") === -1);
+    assert.ok(blob.indexOf("$NVDA") !== -1);
+    assert.ok(blob.indexOf("$49.25") !== -1);
+    assert.ok(blob.indexOf("160 sh") !== -1);
+    assert.ok(blob.indexOf("$197.94") !== -1);
+    assert.ok(blob.indexOf("$CASH") !== -1);
+    assert.ok(blob.indexOf("$IRDM") !== -1);
+    assert.ok(blob.indexOf("Sold @ $54") !== -1);
     assert.ok(blob.indexOf("21-Day") === -1);
     assert.ok(!space.fields.some(function (f) { return f.name === "Near MA" || f.name === "Cash & sold"; }));
     space.fields.filter(function (f) { return f.name.indexOf("Watchlist") === 0; }).forEach(function (f) {
