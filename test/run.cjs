@@ -156,8 +156,8 @@ async function main() {
     var alreadyIn = false;
     ["d_ema21", "d_sma55", "w_ema21"].forEach(function (maKey) {
       if (alreadyIn) return;
-      if (!paper.hasPosition("main", "TEST", maKey)) {
-        var trade = paper.buy("main", "TEST", maKey, maKey, 100, 5, "test", 500);
+      if (!paper.hasPosition("main", "AAPL", maKey)) {
+        var trade = paper.buy("main", "AAPL", maKey, maKey, 100, 5, "test", 500);
         if (trade) alreadyIn = true;
       }
     });
@@ -167,16 +167,16 @@ async function main() {
   await test("pools have separate portfolios", function () {
     paper.resetPortfolio("main");
     paper.resetPortfolio("space_dc");
-    paper.buy("main", "SPY", "d_ema21", "21-Day EMA", 500, 1, "test", 1000);
-    paper.buy("space_dc", "SPY", "d_ema21", "21-Day EMA", 500, 1, "test", 1000);
+    paper.buy("main", "NVDA", "d_ema21", "21-Day EMA", 100, 1, "test", 1000);
+    paper.buy("space_dc", "NVDA", "d_ema21", "21-Day EMA", 100, 1, "test", 1000);
     assert.strictEqual(paper.getOpenPositions("main").length, 1);
     assert.strictEqual(paper.getOpenPositions("space_dc").length, 1);
   });
 
   await test("buy refuses a second position in the same ticker", function () {
     paper.resetPortfolio("main");
-    var first = paper.buy("main", "TEST", "d_ema21", "21D", 100, 5, "test", 500);
-    var second = paper.buy("main", "TEST", "d_sma55", "55D", 100, 5, "test", 500);
+    var first = paper.buy("main", "AAPL", "d_ema21", "21D", 100, 5, "test", 500);
+    var second = paper.buy("main", "AAPL", "d_sma55", "55D", 100, 5, "test", 500);
     assert.ok(first);
     assert.strictEqual(second, null);
     assert.strictEqual(paper.getOpenPositions("main").length, 1);
@@ -202,6 +202,22 @@ async function main() {
     assert.ok(embeds[0].description.indexOf("3:00 PM ET") !== -1);
     var blob = JSON.stringify(embeds).toLowerCase();
     assert.strictEqual(blob.indexOf("paper") === -1, true, "Discord copy must not mention paper trading");
+    assert.strictEqual(blob.indexOf("(watch)") === -1, true);
+    assert.strictEqual(blob.indexOf("zzz") === -1, true);
+  });
+
+  await test("Sunday briefing omits unknown tickers like ZZZ", function () {
+    paper.resetPortfolio("main");
+    var p = paper.getPortfolio("main");
+    p.positions["ZZZ:d_ema21"] = {
+      ticker: "ZZZ", maKey: "d_ema21", maLabel: "21-Day EMA",
+      shares: 10, totalShares: 10, entryPrice: 50, costBasis: 500, lastProfitTier: 0
+    };
+    var embeds = discord.buildSundayPremarketEmbeds({});
+    var main = embeds[0];
+    var openField = main.fields.find(function (f) { return f.name === "Open Positions"; });
+    assert.ok(openField.value.indexOf("ZZZ") === -1);
+    assert.ok(openField.value.indexOf("No open positions") !== -1);
   });
 
   console.log("\nindicators");

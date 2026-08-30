@@ -105,6 +105,7 @@ function getPositionSizeUSD(poolId, livePrices) {
 }
 
 function buy(poolId, ticker, maKey, maLabel, price, shares, reason, riskUsd) {
+  if (!isKnownTicker(poolId, ticker)) return null;
   if (hasAnyPosition(poolId, ticker)) return null;
   var portfolio = getPortfolio(poolId);
   var cost = shares * price;
@@ -274,6 +275,30 @@ function markProfitTier(poolId, key, tier) {
   }
 }
 
+function isKnownTicker(poolId, ticker) {
+  var pool = pools.getPool(poolId);
+  if (!pool) return false;
+  return pool.getTickers().indexOf(ticker) !== -1;
+}
+
+function dropUnknownPositions(poolId) {
+  var dropped = 0;
+  getOpenPositions(poolId).forEach(function (entry) {
+    if (isKnownTicker(poolId, entry.pos.ticker)) return;
+    var trade = sell(poolId, entry.key, entry.pos.entryPrice, "Removed unknown ticker");
+    if (trade) dropped++;
+  });
+  return dropped;
+}
+
+function dropUnknownPositionsAllPools() {
+  var dropped = 0;
+  pools.getAllPools().forEach(function (pool) {
+    dropped += dropUnknownPositions(pool.id);
+  });
+  return dropped;
+}
+
 function resetPortfolio(poolId) {
   cache[poolId] = defaultPortfolio(poolId);
   savePortfolio(poolId, cache[poolId]);
@@ -324,6 +349,8 @@ module.exports = {
   getPnlSummary: getPnlSummary,
   resetPortfolio: resetPortfolio,
   resetAllPortfolios: resetAllPortfolios,
+  dropUnknownPositions: dropUnknownPositions,
+  dropUnknownPositionsAllPools: dropUnknownPositionsAllPools,
   getAllPoolSummaries: getAllPoolSummaries,
   positionKey: positionKey
 };

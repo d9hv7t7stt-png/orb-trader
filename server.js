@@ -199,6 +199,8 @@ app.listen(PORT, () => {
   if (process.env.API_KEY) console.log("API_KEY auth enabled on write endpoints");
   var flattened = scanner.flattenAllAlertOnlyPositions();
   if (flattened) console.log("[Scanner] Flattened " + flattened + " alert-only sector position(s) on startup");
+  var dropped = paper.dropUnknownPositionsAllPools();
+  if (dropped) console.log("[Paper] Dropped " + dropped + " unknown ticker position(s) on startup");
   scanner.scheduleScanner();
   discord.scheduleDailySummary();
   discord.scheduleSundayPremarket();
