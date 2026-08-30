@@ -261,8 +261,7 @@ async function main() {
     assert.strictEqual(p.seededBookVersion, spaceDcBook.BOOK_VERSION);
     assert.ok(p.cash > 60000 && p.cash < 70000);
     Object.values(p.positions).forEach(function (pos) {
-      assert.ok(!pos.heldBook, "Space DC lots must use live stop/TP rules");
-      assert.strictEqual(pos.maLabel, "April low");
+      assert.strictEqual(pos.maLabel, "");
       assert.ok(pos.shares >= 1);
     });
     assert.strictEqual(p.positions["NVDA:rebalance"].entryPrice, 171.37);
@@ -280,7 +279,7 @@ async function main() {
     assert.strictEqual(p.seededFromAprilLows, true);
     assert.strictEqual(mainBook.BUY_USD, 1000);
     Object.values(p.positions).forEach(function (pos) {
-      assert.strictEqual(pos.maLabel, "April low");
+      assert.strictEqual(pos.maLabel, "");
       assert.ok(!pos.heldBook);
       assert.ok(pos.costBasis <= mainBook.BUY_USD + pos.entryPrice + 0.01);
       assert.ok(pos.shares >= 1);
@@ -317,6 +316,8 @@ async function main() {
   await test("Sunday premarket builds one embed per pool", function () {
     paper.resetPortfolio("main");
     paper.resetPortfolio("space_dc");
+    mainBook.seedMainBook(true);
+    spaceDcBook.seedSpaceDcBook(true);
     var embeds = discord.buildSundayPremarketEmbeds({});
     assert.strictEqual(embeds.length, 2);
     assert.ok(embeds[0].title.indexOf("Main") !== -1);
@@ -326,8 +327,13 @@ async function main() {
     assert.ok(embeds[0].description.indexOf("3:00 PM ET") !== -1);
     var blob = JSON.stringify(embeds).toLowerCase();
     assert.strictEqual(blob.indexOf("paper") === -1, true, "Discord copy must not mention paper trading");
+    assert.strictEqual(blob.indexOf("april") === -1, true, "Discord copy must not mention April lows");
     assert.strictEqual(blob.indexOf("(watch)") === -1, true);
     assert.strictEqual(blob.indexOf("zzz") === -1, true);
+    var openField = embeds[0].fields.find(function (f) { return f.name === "Open Positions"; });
+    assert.ok(openField.value.indexOf("SPY") !== -1);
+    assert.ok(openField.value.indexOf("(April") === -1);
+    assert.ok(openField.value.indexOf("• SPY ") !== -1);
   });
 
   await test("Sunday briefing omits unknown tickers like ZZZ", function () {

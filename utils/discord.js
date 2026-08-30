@@ -97,6 +97,15 @@ function formatMaPrice(v) {
   return v != null ? formatMoney(v) : "n/a";
 }
 
+function formatPositionName(pos) {
+  if (pos.maLabel) return pos.ticker + " (" + pos.maLabel + ")";
+  return pos.ticker;
+}
+
+function formatTriggerLabel(maLabel) {
+  return maLabel || "—";
+}
+
 function levelValue(scanRow, key) {
   if (!scanRow || !scanRow.levels) return null;
   var found = scanRow.levels.find(function (l) { return l.key === key; });
@@ -249,12 +258,12 @@ async function postStockEntry(poolId, ticker, maLabel, price, shares, total, pro
     color: 0x00e5a0,
     title: poolTag(poolId) + "📈 STOCK BUY — " + ticker,
     fields: [
-      { name: "Trigger", value: maLabel, inline: true },
+      { name: "Trigger", value: formatTriggerLabel(maLabel), inline: true },
       { name: "Shares", value: String(shares), inline: true },
       { name: "Price", value: "$" + price.toFixed(2), inline: true },
       { name: "Cost", value: formatMoney(total), inline: true },
       { name: "Risk Size", value: formatMoney(riskUsd) + " (" + (parseFloat(process.env.RISK_PCT || "2")) + "% equity)", inline: true },
-      { name: "MA", value: maLabel, inline: true },
+      { name: "MA", value: formatTriggerLabel(maLabel), inline: true },
     ],
     footer: { text: accountFooter(poolId) },
     timestamp: new Date().toISOString()
@@ -267,7 +276,7 @@ async function postStockExit(poolId, ticker, maLabel, exitPrice, pnl, pct, reaso
     color: color,
     title: poolTag(poolId) + (pnl >= 0 ? "✅" : "🔴") + " STOCK SELL — " + ticker,
     fields: [
-      { name: "Entry MA", value: maLabel, inline: true },
+      { name: "Entry MA", value: formatTriggerLabel(maLabel), inline: true },
       { name: "Exit", value: "$" + exitPrice.toFixed(2), inline: true },
       { name: "P&L", value: formatMoney(pnl) + " (" + formatPct(pct) + ")", inline: true },
       { name: "Reason", value: reason, inline: false }
@@ -285,7 +294,7 @@ async function postTakeProfit(poolId, ticker, maLabel, tierLabel, exitPrice, sha
       { name: "Tier", value: tierLabel, inline: true },
       { name: "Sold", value: sharesSold + "sh @ $" + exitPrice.toFixed(2), inline: true },
       { name: "P&L", value: formatMoney(pnl) + " (" + formatPct(pct) + ")", inline: true },
-      { name: "Entry MA", value: maLabel, inline: true },
+      { name: "Entry MA", value: formatTriggerLabel(maLabel), inline: true },
       { name: "Remaining", value: remaining != null ? remaining + " shares" : "Closed", inline: true }
     ],
     footer: { text: accountFooter(poolId) },
@@ -341,7 +350,7 @@ async function postStockDailySummary(livePricesByPool) {
       }).map(function (pos) {
         var px = livePrices[pos.ticker] ? livePrices[pos.ticker].price : pos.entryPrice;
         var u = (px - pos.entryPrice) * pos.shares;
-        return "• " + pos.ticker + " (" + pos.maLabel + ") " + pos.shares + "sh · uP&L " + formatMoney(u);
+        return "• " + formatPositionName(pos) + " " + pos.shares + "sh · uP&L " + formatMoney(u);
       }).join("\n") || "No open positions";
       fields.push(
         { name: pool.shortLabel + " — Open Positions", value: openLines.slice(0, 1000), inline: false },
@@ -398,7 +407,7 @@ function buildSundayPremarketEmbeds(livePricesByPool) {
       return {
         color: 0x4da6ff,
         title: poolTag(pool.id) + "🌅 SUNDAY PREMARKET",
-        description: "Week-ahead briefing · " + dateLabel + " · " + timeLabel + " · April lows · live stops/TP",
+        description: "Week-ahead briefing · " + dateLabel + " · " + timeLabel,
         fields: fields,
         footer: { text: accountFooter(pool.id) },
         timestamp: new Date().toISOString()
@@ -409,7 +418,7 @@ function buildSundayPremarketEmbeds(livePricesByPool) {
       var px = livePrices[pos.ticker] ? livePrices[pos.ticker].price : pos.entryPrice;
       var u = (px - pos.entryPrice) * pos.shares;
       var pct = pos.entryPrice ? ((px - pos.entryPrice) / pos.entryPrice) * 100 : 0;
-      return "• " + pos.ticker + " (" + pos.maLabel + ") " + pos.shares + "sh · " + formatMoney(u) + " (" + formatPct(pct) + ")";
+      return "• " + formatPositionName(pos) + " " + pos.shares + "sh · " + formatMoney(u) + " (" + formatPct(pct) + ")";
     }).join("\n") || "No open positions — waiting for MA proximity";
 
     fields.push(
@@ -424,7 +433,7 @@ function buildSundayPremarketEmbeds(livePricesByPool) {
     return {
       color: 0x4da6ff,
       title: poolTag(pool.id) + "🌅 SUNDAY PREMARKET",
-      description: "Week-ahead briefing · " + dateLabel + " · " + timeLabel + " · ~$1k entries at April 2026 lows",
+      description: "Week-ahead briefing · " + dateLabel + " · " + timeLabel,
       fields: fields,
       footer: { text: accountFooter(pool.id) },
       timestamp: new Date().toISOString()
