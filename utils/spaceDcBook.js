@@ -2,12 +2,13 @@
 // Share counts from 6/30/26 weights on a $200,000 book (IRDM out, NVDA/GOOGL anchors)
 // Every lot is entered at its April 2026 low — no blend with the rebalance close
 // Cash = $200,000 − sum(shares × April low)
+// Live book — same stop / take-profit / MA-entry rules as Main
 
 var paper = require("./paper");
 var pools = require("./pools");
 
 var REBALANCE_EQUITY = 200000;
-var BOOK_VERSION = 4;
+var BOOK_VERSION = 5;
 var REBALANCE_TIME = "2026-06-30T19:52:00.000Z"; // 3:52 PM ET — share-count basis
 
 var LOTS = [
@@ -67,8 +68,7 @@ function applyBook(p) {
       entryPrice: parseFloat(lot.entryPrice.toFixed(4)),
       entryTime: lot.aprilDate + "T16:00:00.000Z",
       costBasis: parseFloat(lot.cost.toFixed(2)),
-      lastProfitTier: 0,
-      heldBook: true
+      lastProfitTier: 0
     };
     invested += lot.cost;
   });

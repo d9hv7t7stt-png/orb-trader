@@ -180,6 +180,9 @@ app.post("/api/reset-paper", requireAuth, (req, res) => {
     if (poolId === "space_dc") {
       require("./utils/spaceDcBook").seedSpaceDcBook(true);
     }
+    if (poolId === "main") {
+      require("./utils/mainBook").seedMainBook(true);
+    }
     var pool = pools.getPool(poolId);
     state.logEvent("RESET", "Paper portfolio reset to $" + pool.startingBalance.toLocaleString("en-US"), poolId);
     res.json({ ok: true, pool: poolId });
@@ -208,6 +211,11 @@ app.listen(PORT, () => {
   var seeded = spaceDcBook.seedSpaceDcBook();
   if (seeded && seeded.seededFromRebalance) {
     console.log("[Paper] Space DC book: " + Object.keys(seeded.positions).length + " names at April lows, cash $" + seeded.cash.toFixed(2));
+  }
+  var mainBook = require("./utils/mainBook");
+  var mainSeeded = mainBook.seedMainBook();
+  if (mainSeeded && mainSeeded.seededFromAprilLows) {
+    console.log("[Paper] Main book: " + Object.keys(mainSeeded.positions).length + " names × ~$1k at April lows, cash $" + mainSeeded.cash.toFixed(2));
   }
   scanner.scheduleScanner();
   discord.scheduleDailySummary();

@@ -210,6 +210,10 @@ async function main() {
     });
     assert.strictEqual(paper.getPortfolio("main").cash, 12345);
     delete require.cache[require.resolve("../utils/paper")];
+    delete require.cache[require.resolve("../utils/scanner")];
+    delete require.cache[require.resolve("../utils/spaceDcBook")];
+    delete require.cache[require.resolve("../utils/mainBook")];
+    delete require.cache[require.resolve("../utils/discord")];
     var paper2 = require("../utils/paper");
     assert.strictEqual(paper2.getPortfolio("main").cash, 12345);
     paper = paper2;
@@ -249,7 +253,7 @@ async function main() {
     assert.ok(cash > 60000 && cash < 70000, "April-low cash leftover, got " + cash);
   });
 
-  await test("seedSpaceDcBook writes 15 held lots at April lows", function () {
+  await test("seedSpaceDcBook writes 15 live lots at April lows", function () {
     paper.resetPortfolio("space_dc");
     var p = spaceDcBook.seedSpaceDcBook(true);
     assert.strictEqual(Object.keys(p.positions).length, 15);
@@ -257,13 +261,54 @@ async function main() {
     assert.strictEqual(p.seededBookVersion, spaceDcBook.BOOK_VERSION);
     assert.ok(p.cash > 60000 && p.cash < 70000);
     Object.values(p.positions).forEach(function (pos) {
-      assert.strictEqual(pos.heldBook, true);
+      assert.ok(!pos.heldBook, "Space DC lots must use live stop/TP rules");
       assert.strictEqual(pos.maLabel, "April low");
       assert.ok(pos.shares >= 1);
     });
     assert.strictEqual(p.positions["NVDA:rebalance"].entryPrice, 171.37);
     var again = spaceDcBook.seedSpaceDcBook(false);
     assert.strictEqual(again.positions["NVDA:rebalance"].shares, 160);
+  });
+
+  console.log("\nmainBook");
+  var mainBook = require("../utils/mainBook");
+
+  await test("Main seeds ~$1k April-low lots on tradeable names", function () {
+    paper.resetPortfolio("main");
+    var p = mainBook.seedMainBook(true);
+    assert.strictEqual(Object.keys(p.positions).length, mainBook.LOTS.length);
+    assert.strictEqual(p.seededFromAprilLows, true);
+    assert.strictEqual(mainBook.BUY_USD, 1000);
+    Object.values(p.positions).forEach(function (pos) {
+      assert.strictEqual(pos.maLabel, "April low");
+      assert.ok(!pos.heldBook);
+      assert.ok(pos.costBasis <= mainBook.BUY_USD + pos.entryPrice + 0.01);
+      assert.ok(pos.shares >= 1);
+    });
+    assert.strictEqual(p.positions["NVDA:april_low"].entryPrice, 171.37);
+    assert.strictEqual(p.positions["NVDA:april_low"].shares, 5);
+    assert.ok(p.cash > 30000 && p.cash < 50000, "cash leftover " + p.cash);
+    assert.ok(!p.positions["SPCX:april_low"]);
+    assert.ok(!p.positions["XLF:april_low"]);
+  });
+
+  await test("Space DC stop loss fires on live April-low lots", function () {
+    paper.resetPortfolio("space_dc");
+    var p = spaceDcBook.seedSpaceDcBook(true);
+    assert.ok(p.positions["ASTS:rebalance"]);
+    var scanner = require("../utils/scanner");
+    var results = {
+      ASTS: {
+        ticker: "ASTS",
+        price: 50,
+        stopPrice: 50,
+        levels: [{ key: "d_sma55", label: "55-Day SMA", value: 55 }]
+      }
+    };
+    var exits = scanner.processStopLosses("space_dc", results);
+    assert.strictEqual(exits, 1);
+    assert.ok(!paper.getPortfolio("space_dc").positions["ASTS:rebalance"]);
+    assert.strictEqual(paper.hasAnyPosition("space_dc", "ASTS"), false);
   });
 
   console.log("\ndiscord");
