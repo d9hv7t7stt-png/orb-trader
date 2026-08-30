@@ -228,6 +228,10 @@ async function runScan(force) {
   }
 }
 
+function startupScanForced() {
+  return marketHours.isMarketHours();
+}
+
 function scheduleScanner() {
   var intervalMin = parseInt(process.env.SCAN_INTERVAL_MIN || "30", 10);
   state.logEvent("SCAN", "Scanner scheduled every " + intervalMin + " min (all pools)");
@@ -238,10 +242,18 @@ function scheduleScanner() {
   }
 
   setTimeout(function () {
-    runScan(true).then(function () {
+    var force = startupScanForced();
+    runScan(force).then(function (result) {
+      if (!force && result && result.skipped) {
+        state.logEvent("SCAN", "Startup scan skipped — outside market hours");
+      }
       setTimeout(tick, intervalMin * 60 * 1000);
     });
   }, 5000);
 }
 
-module.exports = { runScan: runScan, scheduleScanner: scheduleScanner };
+module.exports = {
+  runScan: runScan,
+  scheduleScanner: scheduleScanner,
+  startupScanForced: startupScanForced
+};
