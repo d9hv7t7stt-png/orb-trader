@@ -150,10 +150,23 @@ function processTicker(poolId, data, livePrices) {
   return { alerts: alerts, entries: entries };
 }
 
-function runPoolScan(poolId, allResults, marketOpen) {
+function collectNearHits(poolId, list, results) {
+  var nearHits = [];
+  list.forEach(function (t) {
+    var data = results[t];
+    if (!data || !data.levels) return;
+    data.levels.filter(function (l) { return l.near; }).forEach(function (l) {
+      nearHits.push({ poolId: poolId, ticker: t, level: l.label, proximity: l.proximity_pct, price: data.price });
+    });
+  });
+  return nearHits;
+}
+
+function runPoolScan(poolId, allResults, marketOpen, opts) {
+  opts = opts || {};
   var pool = pools.getPool(poolId);
   var list = pool.getTickers().filter(function (t) { return state.isTickerEnabled(poolId, t); });
-  state.logEvent("SCAN", "Scanning " + list.length + " tickers…", poolId);
+  state.logEvent("SCAN", (opts.quotesOnly ? "Quotes-only scan " : "Scanning ") + list.length + " tickers…", poolId);
 
   var results = {};
   list.forEach(function (t) {
@@ -166,25 +179,24 @@ function runPoolScan(poolId, allResults, marketOpen) {
     if (r && r.price) livePrices[r.ticker] = { price: r.price };
   });
 
-  flattenAlertOnlyPositions(poolId, results);
-  var totalExits = processStopLosses(poolId, results);
-  var totalTakeProfits = processTakeProfits(poolId, results);
-
+  var totalExits = 0;
+  var totalTakeProfits = 0;
   var totalAlerts = 0;
   var totalEntries = 0;
-  var nearHits = [];
+  var nearHits = collectNearHits(poolId, list, results);
 
-  for (var i = 0; i < list.length; i++) {
-    var t = list[i];
-    var data = results[t];
-    if (!data) continue;
-    var out = processTicker(poolId, data, livePrices);
-    totalAlerts += out.alerts;
-    totalEntries += out.entries;
-    if (data.levels) {
-      data.levels.filter(function (l) { return l.near; }).forEach(function (l) {
-        nearHits.push({ poolId: poolId, ticker: t, level: l.label, proximity: l.proximity_pct, price: data.price });
-      });
+  if (!opts.quotesOnly) {
+    flattenAlertOnlyPositions(poolId, results);
+    totalExits = processStopLosses(poolId, results);
+    totalTakeProfits = processTakeProfits(poolId, results);
+
+    for (var i = 0; i < list.length; i++) {
+      var t = list[i];
+      var data = results[t];
+      if (!data) continue;
+      var out = processTicker(poolId, data, livePrices);
+      totalAlerts += out.alerts;
+      totalEntries += out.entries;
     }
   }
 
@@ -205,7 +217,8 @@ function runPoolScan(poolId, allResults, marketOpen) {
   };
 }
 
-async function runScan(force) {
+async function runScan(force, opts) {
+  opts = opts || {};
   if (scanning) return { skipped: true, reason: "scan in progress" };
   if (!force && !marketHours.isMarketHours()) {
     return { skipped: true, reason: "outside market hours" };
@@ -231,7 +244,7 @@ async function runScan(force) {
 
     var poolResults = await Promise.all(
       pools.getAllPools().map(function (pool) {
-        return Promise.resolve(runPoolScan(pool.id, allResults, marketOpen));
+        return Promise.resolve(runPoolScan(pool.id, allResults, marketOpen, opts));
       })
     );
 

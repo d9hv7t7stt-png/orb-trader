@@ -1,10 +1,10 @@
 {
-  "name": "Argus Stock Trader",
-  "short_name": "Argus Stock",
-  "description": "Paper stock trader — MA proximity scanner via Yahoo Finance",
+  "name": "Argus",
+  "short_name": "Argus",
+  "description": "Paper stock trader — MA proximity scanner",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#080c10",
+  "background_color": "#030406",
   "theme_color": "#00e5a0",
   "orientation": "portrait",
   "icons": [

@@ -134,6 +134,7 @@ app.get("/api/overview", async (req, res) => {
       near_hits: poolOverview.near_hits,
       tickers: poolOverview.tickers,
       ma_levels: tickers.MA_LEVELS,
+      alert_only: tickers.SECTOR_SPDR,
       proximity_pct: tickers.PROXIMITY_PCT * 100,
       risk_pct: tickers.RISK_PCT * 100,
       trade_size: poolOverview.trade_size,
@@ -152,7 +153,7 @@ app.get("/api/overview", async (req, res) => {
           DISCORD_ROLE_STOPS: "Ping on stop-loss exits (e.g. @Risk)",
           DISCORD_ROLE_TAKEPROFIT: "Ping on take-profit sells (e.g. @Profits)",
           DISCORD_ROLE_PROXIMITY: "Ping on MA proximity alerts (e.g. @Alerts)",
-          DISCORD_ROLE_DAILY: "Ping on after-the-bell P&L (e.g. @Daily)",
+          DISCORD_ROLE_DAILY: "Ping on after-the-bell P&L and Sunday 3:00 PM ET briefing (e.g. @Daily)",
           DISCORD_ROLE_ALERTS: "Fallback ping for all alert types"
         }
       }
@@ -214,4 +215,5 @@ app.listen(PORT, () => {
   if (process.env.API_KEY) console.log("API_KEY auth enabled on write endpoints");
   scanner.scheduleScanner();
   discord.scheduleDailySummary();
+  discord.scheduleSundayPremarket();
 });

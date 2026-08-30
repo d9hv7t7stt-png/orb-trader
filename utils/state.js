@@ -56,7 +56,10 @@ function savePersisted(state) {
         lastAlerts: ps.lastAlerts
       };
     });
-    fs.writeFileSync(PERSIST_FILE, JSON.stringify({ pools: poolsOut }));
+    fs.writeFileSync(PERSIST_FILE, JSON.stringify({
+      pools: poolsOut,
+      log: (state.log || []).slice(0, 100)
+    }));
   } catch (e) {
     console.error("[State] Save error:", e.message);
   }
@@ -81,6 +84,9 @@ function mergeState(saved) {
       lastAlerts: saved.lastAlerts || {},
       lastScan: saved.lastScan || null
     };
+  }
+  if (saved && Array.isArray(saved.log) && saved.log.length) {
+    state.log = saved.log.slice(0, 100);
   }
   return state;
 }
@@ -151,6 +157,7 @@ function logEvent(type, message, poolId) {
   state.log.unshift(entry);
   if (state.log.length > 300) state.log.pop();
   console.log("[" + type + "] " + entry.message);
+  savePersisted(state);
 }
 
 module.exports = {
