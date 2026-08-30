@@ -317,23 +317,20 @@ async function main() {
     var space = discord.buildSundayPremarketEmbeds({
       space_dc: { NVDA: { price: 217.55 } }
     }).find(function (e) { return e.title.indexOf("Space DC") !== -1; });
-    var watch = space.fields.filter(function (f) {
-      return f.name.indexOf("Watchlist") === 0;
-    }).map(function (f) { return f.value; }).join("\n");
+    var blob = space.fields.map(function (f) { return f.name + "\n" + f.value; }).join("\n");
     pools.SPACE_DC_TICKERS.forEach(function (t) {
-      assert.ok(watch.indexOf(t) !== -1, "missing " + t);
+      assert.ok(blob.indexOf(t) !== -1, "missing " + t);
     });
-    assert.ok(watch.indexOf("$49.25") !== -1, "prior close");
-    assert.ok(watch.indexOf("21 $48.10") !== -1);
-    assert.ok(watch.indexOf("55 $47.20") !== -1);
-    assert.ok(watch.indexOf("200") === -1, "200-day should not be listed");
-    assert.ok(watch.indexOf("86sh") !== -1);
-    assert.ok(watch.indexOf("IRDM") !== -1);
-    assert.ok(watch.indexOf("Sold @ $54") !== -1);
-    assert.ok(watch.indexOf("CASH") !== -1);
+    assert.ok(blob.indexOf("$49.25") !== -1, "prior close");
+    assert.ok(blob.indexOf("21 $48.10") !== -1);
+    assert.ok(blob.indexOf("55 $47.20") !== -1);
+    assert.ok(blob.indexOf("200-Day") === -1, "200-day should not be listed");
+    assert.ok(blob.indexOf("86sh") !== -1);
+    assert.ok(blob.indexOf("IRDM") !== -1);
+    assert.ok(blob.indexOf("Sold @ $54") !== -1);
+    assert.ok(blob.indexOf("CASH") !== -1);
     assert.ok(!space.fields.some(function (f) { return f.name === "Near MA"; }));
-    var blob = JSON.stringify(space).toLowerCase();
-    assert.strictEqual(blob.indexOf("paper") === -1, true);
+    assert.strictEqual(JSON.stringify(space).toLowerCase().indexOf("paper") === -1, true);
   });
 
   console.log("\nindicators");

@@ -162,11 +162,13 @@ function buildSpaceDcWatchlistFields(livePrices, scanResults) {
       lines.push("     no position");
     }
   });
-  lines.push("CASH  " + formatMoney(p.cash));
+  var fields = fieldsFromLines("Watchlist", lines);
+  var notes = ["CASH  " + formatMoney(p.cash)];
   spaceDcBook.SOLD.forEach(function (sold) {
-    lines.push(sold.ticker + "  " + sold.note);
+    notes.push(sold.ticker + "  " + sold.note);
   });
-  return fieldsFromLines("Watchlist", lines);
+  fields.push({ name: "Cash & sold", value: notes.join("\n"), inline: false });
+  return fields;
 }
 
 function livePricesFromState() {
