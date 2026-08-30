@@ -117,8 +117,9 @@ function scheduleDailySummary() {
 async function postProximityAlert(poolId, ticker, price, level) {
   await sendDiscord({ embeds: [{
     color: 0x4da6ff,
-    title: poolTag(poolId) + "📍 MA PROXIMITY — " + ticker,
-    description: ticker + " is within **" + level.proximity_pct + "%** of **" + level.label + "**",
+    title: poolTag(poolId) + (require("./tickers").isAlertOnly(ticker) ? "📍 WATCH — " : "📍 MA PROXIMITY — ") + ticker,
+    description: ticker + " is within **" + level.proximity_pct + "%** of **" + level.label + "**" +
+      (require("./tickers").isAlertOnly(ticker) ? "\n*Watch only — sector ETFs are not paper-traded.*" : ""),
     fields: [
       { name: "Price", value: "$" + price.toFixed(2), inline: true },
       { name: "MA Level", value: "$" + level.value.toFixed(2), inline: true },
@@ -226,8 +227,8 @@ async function postStockDailySummary(livePricesByPool) {
 
   await sendDiscord({ embeds: [{
     color: color,
-    title: "🔔 AFTER THE BELL — Daily P&L · " + new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }),
-    description: "Combined equity " + formatMoney(totalEquity) + " · Combined net P&L " + formatMoney(totalNet),
+    title: "🔔 AFTER THE BELL — Position summary · " + new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }),
+    description: "One message, both pools. Combined equity " + formatMoney(totalEquity) + " · Combined net P&L " + formatMoney(totalNet),
     fields: fields,
     footer: { text: "Argus Paper · Main $50K + Space DC $108K · Stop: daily close < 55 SMA · TP: +10/+20/+30%" },
     timestamp: new Date().toISOString()

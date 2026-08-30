@@ -52,6 +52,17 @@ async function main() {
     assert.ok(pools.getPool("space_dc").getTickers().includes("NVDA"));
   });
 
+  console.log("\ntickers");
+  var tickers = require("../utils/tickers");
+
+  await test("sector SPDRs are alert-only", function () {
+    ["XLC", "XLY", "XLP", "XLE", "XLF", "XLV", "XLI", "XLB", "XLRE", "XLK", "XLU"].forEach(function (t) {
+      assert.strictEqual(tickers.isAlertOnly(t), true, t);
+    });
+    assert.strictEqual(tickers.isAlertOnly("NVDA"), false);
+    assert.strictEqual(tickers.isAlertOnly("SPY"), false);
+  });
+
   console.log("\nmarketHours");
   var marketHours = require("../utils/marketHours");
 

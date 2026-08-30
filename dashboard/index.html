@@ -272,6 +272,8 @@ function render() {
   document.getElementById('strategy-body').innerHTML = `
     <div class="rule"><strong>Data:</strong> ${s.data_source} — scans every 30 min + after the bell (4:05 PM ET)</div>
     <div class="rule"><strong>Entry:</strong> ${s.entry}</div>
+    <div class="rule"><strong>Sector ETFs:</strong> XLC, XLY, XLP, XLE, XLF, XLV, XLI, XLB, XLRE, XLK, XLU are <strong>watch only</strong> — Discord proximity alerts, no paper buys/sells</div>
+    <div class="rule"><strong>Daily Discord:</strong> After the bell (4:05 PM ET) — one message with a position summary for <strong>each pool</strong></div>
     <div class="rule"><strong>Position size:</strong> ${s.sizing || (data.risk_pct + '% of equity')}</div>
     <div class="rule"><strong>Stop loss:</strong> ${s.exit || 'Daily close below 55-Day SMA'}</div>
     <div class="rule"><strong>Take profit:</strong> ${s.take_profit || '+10% sell 25% → +20% sell 25% → +30% exit rest'}</div>
