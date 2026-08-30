@@ -103,6 +103,84 @@ function levelValue(scanRow, key) {
   return found && found.value != null ? found.value : null;
 }
 
+var TABLE_PAD = 2;
+
+function cellText(value) {
+  if (value == null || value === "") return "-";
+  return String(value);
+}
+
+function padCell(text, width, align) {
+  text = cellText(text);
+  if (text.length > width) text = text.slice(0, width);
+  return align === "right" ? text.padStart(width) : text.padEnd(width);
+}
+
+function columnWidths(headers, rows) {
+  return headers.map(function (h, i) {
+    var w = cellText(h).length + 2;
+    rows.forEach(function (row) {
+      w = Math.max(w, cellText(row[i]).length);
+    });
+    return w;
+  });
+}
+
+function tableBorder(widths, left, mid, right, fill) {
+  return left + widths.map(function (w) { return fill.repeat(w + TABLE_PAD * 2); }).join(mid) + right;
+}
+
+function tableRow(cells, widths, aligns) {
+  var pad = " ".repeat(TABLE_PAD);
+  return "│" + cells.map(function (c, i) {
+    return pad + padCell(c, widths[i], aligns && aligns[i]) + pad;
+  }).join("│") + "│";
+}
+
+function wrapCodeBlock(text) {
+  return "```\n" + text + "\n```";
+}
+
+function fieldsFromTable(baseName, headers, rows, aligns) {
+  var limit = 1024;
+  var widths = columnWidths(headers, rows);
+  var top = tableBorder(widths, "┌", "┬", "┐", "─");
+  var mid = tableBorder(widths, "├", "┼", "┤", "─");
+  var bot = tableBorder(widths, "└", "┴", "┘", "─");
+  var head = tableRow(headers, widths, aligns);
+  var data = rows.map(function (row) { return tableRow(row, widths, aligns); });
+  var frame = wrapCodeBlock([top, head, mid, bot].join("\n")).length;
+  var available = Math.max(80, limit - frame - 1);
+
+  var chunks = [];
+  var buf = [];
+  var len = 0;
+  function flush() {
+    if (!buf.length) return;
+    var body = [top, head, mid].concat(buf).concat([bot]).join("\n");
+    chunks.push(wrapCodeBlock(body));
+    buf = [];
+    len = 0;
+  }
+  data.forEach(function (line) {
+    var add = (buf.length ? 1 : 0) + line.length;
+    if (buf.length && len + add > available) flush();
+    buf.push(line);
+    len += add;
+  });
+  flush();
+  if (!chunks.length) {
+    chunks.push(wrapCodeBlock([top, head, mid, bot].join("\n")));
+  }
+  return chunks.map(function (value, i) {
+    return {
+      name: i === 0 ? baseName : baseName + " (" + (i + 1) + ")",
+      value: value,
+      inline: false
+    };
+  });
+}
+
 function fieldsFromLines(baseName, lines, limit) {
   limit = limit || 1024;
   var fields = [];
@@ -110,14 +188,17 @@ function fieldsFromLines(baseName, lines, limit) {
   var len = 0;
   function flush() {
     if (!buf.length) return;
-    var name = fields.length === 0 ? baseName : baseName + " (" + (fields.length + 1) + ")";
-    fields.push({ name: name, value: buf.join("\n").slice(0, limit), inline: false });
+    fields.push({
+      name: fields.length === 0 ? baseName : baseName + " (" + (fields.length + 1) + ")",
+      value: buf.join("\n").slice(0, limit),
+      inline: false
+    });
     buf = [];
     len = 0;
   }
   lines.forEach(function (line) {
     var add = (buf.length ? 1 : 0) + line.length;
-    if (len + add > limit) flush();
+    if (buf.length && len + add > limit) flush();
     buf.push(line);
     len += add;
   });
@@ -138,53 +219,66 @@ function buildSpaceDcWatchlistFields(livePrices, scanResults) {
   var byTicker = spaceDcBook.positionByTicker(p);
   livePrices = livePrices || {};
   scanResults = scanResults || {};
+  var headers = ["TICK", "CLOSE", "21", "55", "SH", "ENTRY", "P&L"];
+  var aligns = ["left", "right", "right", "right", "right", "right", "right"];
+  var rows = [];
 
-  var lines = [];
   spaceDcBook.watchlistTickers().forEach(function (ticker) {
     var row = scanResults[ticker] || {};
     var pos = byTicker[ticker];
-    var close = priorClose(row, pos ? pos.entryPrice : null);
-    var ema21 = levelValue(row, "d_ema21");
-    var sma55 = levelValue(row, "d_sma55");
-    var px = livePrices[ticker] && livePrices[ticker].price != null
-      ? livePrices[ticker].price
-      : (close != null ? close : (pos ? pos.entryPrice : null));
-    lines.push(
-      ticker.padEnd(5) + "  " + formatMaPrice(close)
-        + "  21 " + formatMaPrice(ema21)
-        + "  55 " + formatMaPrice(sma55)
-    );
+    var close = priorClose(row, null);
+    if (close == null && livePrices[ticker] && livePrices[ticker].price != null) {
+      close = livePrices[ticker].price;
+    }
+    if (close == null && pos) close = pos.entryPrice;
     if (pos && pos.shares) {
-      var value = pos.shares * (px != null ? px : pos.entryPrice);
-      var pct = pos.entryPrice ? (((px != null ? px : pos.entryPrice) - pos.entryPrice) / pos.entryPrice) * 100 : 0;
-      lines.push("     " + pos.shares + "sh  " + formatMoney(value) + "  " + formatPct(pct));
+      var mark = close != null ? close : pos.entryPrice;
+      var pnl = (mark - pos.entryPrice) * pos.shares;
+      var pct = pos.entryPrice ? ((mark - pos.entryPrice) / pos.entryPrice) * 100 : 0;
+      var pnlStr = (pnl > 0 ? "+" : "") + formatMoney(pnl) + " (" + formatPct(pct) + ")";
+      rows.push([
+        ticker,
+        formatMaPrice(close),
+        formatMaPrice(levelValue(row, "d_ema21")),
+        formatMaPrice(levelValue(row, "d_sma55")),
+        String(pos.shares),
+        formatMoney(pos.entryPrice),
+        pnlStr
+      ]);
     } else {
-      lines.push("     no position");
+      rows.push([
+        ticker,
+        formatMaPrice(close),
+        formatMaPrice(levelValue(row, "d_ema21")),
+        formatMaPrice(levelValue(row, "d_sma55")),
+        "-",
+        "-",
+        "-"
+      ]);
     }
   });
-  var fields = fieldsFromLines("Watchlist", lines);
-  var notes = ["CASH  " + formatMoney(p.cash)];
+  rows.push(["CASH", formatMoney(p.cash), "-", "-", "-", "-", "-"]);
   spaceDcBook.SOLD.forEach(function (sold) {
-    notes.push(sold.ticker + "  " + sold.note);
+    rows.push([sold.ticker, "Sold @ $54", "-", "-", "-", "-", "-"]);
   });
-  fields.push({ name: "Cash & sold", value: notes.join("\n"), inline: false });
-  return fields;
+  return fieldsFromTable("Watchlist", headers, rows, aligns);
 }
 
 function buildMainWatchlistFields(scanResults) {
   var tickersMod = require("./tickers");
   scanResults = scanResults || {};
-  var lines = tickersMod.getMainBriefingTickers().map(function (ticker) {
+  var aligns = ["left", "right", "right", "right"];
+  var headers = ["TICK", "CLOSE", "21", "55"];
+  var rows = tickersMod.getMainBriefingTickers().map(function (ticker) {
     var row = scanResults[ticker] || {};
-    var close = priorClose(row, null);
-    var ema21 = levelValue(row, "d_ema21");
-    var sma55 = levelValue(row, "d_sma55");
-    return tickersMod.getDisplayTicker(ticker).padEnd(4)
-      + "  " + formatMaPrice(close)
-      + "  21 " + formatMaPrice(ema21)
-      + "  55 " + formatMaPrice(sma55);
+    return [
+      tickersMod.getDisplayTicker(ticker),
+      formatMaPrice(priorClose(row, null)),
+      formatMaPrice(levelValue(row, "d_ema21")),
+      formatMaPrice(levelValue(row, "d_sma55"))
+    ];
   });
-  return fieldsFromLines("Watchlist", lines);
+  return fieldsFromTable("Watchlist", headers, rows, aligns);
 }
 
 function livePricesFromState() {
