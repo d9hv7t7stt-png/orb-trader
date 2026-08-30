@@ -1,12 +1,11 @@
 // Space DC book reconstructed from the 6/30/26 rebalance chart:
 // IRDM out, 10% cash, NVDA/GOOGL as anchors, remaining names at 8/7/6/4/3%.
-// Equity at rebalance was $108,000 (original equal-weight $6,250 × 16 = $100,000, then +8%).
-// Shares = round(weight × $108,000 / 6/30/26 close). Entry = that close.
+// Book sized at $200,000. Shares = round(weight × $200,000 / 6/30/26 close). Entry = that close.
 
 var paper = require("./paper");
 var pools = require("./pools");
 
-var REBALANCE_EQUITY = 108000;
+var REBALANCE_EQUITY = 200000;
 var REBALANCE_TIME = "2026-06-30T19:52:00.000Z"; // 3:52 PM ET
 
 var LOTS = [
@@ -77,7 +76,7 @@ function applyBook(p) {
 
 function seedSpaceDcBook(force) {
   var p = paper.getPortfolio("space_dc");
-  if (!force && p.seededFromRebalance) return p;
+  if (!force && p.seededFromRebalance && p.startingBalance === REBALANCE_EQUITY) return p;
   return paper.replacePortfolio("space_dc", applyBook);
 }
 
