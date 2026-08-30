@@ -48,7 +48,16 @@ function hasPosition(ticker, maKey) {
   return !!portfolio.positions[positionKey(ticker, maKey)];
 }
 
-function buy(ticker, maKey, maLabel, price, shares, reason) {
+function getPositionSizeUSD(livePrices) {
+  var equity = getEquity(livePrices);
+  var size = equity * tickers.RISK_PCT;
+  if (tickers.TRADE_SIZE > 0) {
+    size = Math.min(size, tickers.TRADE_SIZE);
+  }
+  return Math.max(100, Math.floor(size));
+}
+
+function buy(ticker, maKey, maLabel, price, shares, reason, riskUsd) {
   var cost = shares * price;
   if (cost > portfolio.cash) {
     shares = Math.floor(portfolio.cash / price);
@@ -75,6 +84,7 @@ function buy(ticker, maKey, maLabel, price, shares, reason) {
     shares: shares,
     price: price,
     total: cost,
+    risk_usd: riskUsd || cost,
     reason: reason,
     time: new Date().toISOString()
   };
@@ -152,6 +162,12 @@ function getPnlSummary() {
     : { daily: null, weekly: null, monthly: null, yearly: null };
 }
 
+function getOpenPositions() {
+  return Object.entries(portfolio.positions).map(function (entry) {
+    return { key: entry[0], pos: entry[1] };
+  });
+}
+
 function resetPortfolio() {
   portfolio = {
     cash: tickers.STARTING_BALANCE,
@@ -167,6 +183,8 @@ function resetPortfolio() {
 module.exports = {
   getPortfolio: getPortfolio,
   getEquity: getEquity,
+  getPositionSizeUSD: getPositionSizeUSD,
+  getOpenPositions: getOpenPositions,
   hasPosition: hasPosition,
   buy: buy,
   sell: sell,

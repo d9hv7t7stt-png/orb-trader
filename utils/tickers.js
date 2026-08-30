@@ -65,8 +65,10 @@ var MA_LEVELS = [
 ];
 
 var PROXIMITY_PCT = parseFloat(process.env.MA_PROXIMITY_PCT || "1") / 100;
-var TRADE_SIZE = parseFloat(process.env.TRADE_SIZE_USD || "2000");
+var RISK_PCT = parseFloat(process.env.RISK_PCT || "2") / 100; // 2% of equity per entry
+var TRADE_SIZE = parseFloat(process.env.TRADE_SIZE_USD || "0"); // 0 = use risk % only
 var STARTING_BALANCE = parseFloat(process.env.PAPER_BALANCE || "50000");
+var STOP_MA_KEY = "d_sma55"; // stop loss: daily close below 55 SMA
 
 module.exports = {
   getAllTickers: getAllTickers,
@@ -74,7 +76,9 @@ module.exports = {
   getDisplayName: getDisplayName,
   MA_LEVELS: MA_LEVELS,
   PROXIMITY_PCT: PROXIMITY_PCT,
+  RISK_PCT: RISK_PCT,
   TRADE_SIZE: TRADE_SIZE,
   STARTING_BALANCE: STARTING_BALANCE,
+  STOP_MA_KEY: STOP_MA_KEY,
   SECTOR_SPDR: SECTOR_SPDR
 };
