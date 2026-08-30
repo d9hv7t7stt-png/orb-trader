@@ -1,7 +1,7 @@
 {
   "name": "Argus Swing Trader",
   "short_name": "Argus Swing",
-  "description": "Argus Swing Trader — automated swing options dashboard",
+  "description": "Argus Swing Trader — 55 SMA / 21 EMA swing options dashboard",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#080c10",

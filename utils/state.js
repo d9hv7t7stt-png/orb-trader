@@ -25,6 +25,7 @@ var state = {
   contracts: (_saved && _saved.contracts) ? _saved.contracts : { SPY: 2, SPXW: 1, IWM: 2, QQQ: 2 },
   tickers: (_saved && _saved.tickers) ? _saved.tickers : { SPY: true, SPXW: true, IWM: true, QQQ: true },
   positions: { SPY: null, SPXW: null, IWM: null, QQQ: null },
+  signals: { SPY: null, SPXW: null, IWM: null, QQQ: null },
   log: []
 };
 
@@ -77,6 +78,10 @@ function toggleTicker(ticker, enabled) {
   logEvent("TICKER", ticker + " " + (enabled ? "enabled" : "disabled"));
 }
 
+function setLastSignal(ticker, data) {
+  state.signals[ticker] = Object.assign({ time: new Date().toISOString() }, data);
+}
+
 function logEvent(type, message) {
   var entry = { time: new Date().toISOString(), type: type, message: message };
   state.log.unshift(entry);
@@ -92,5 +97,6 @@ module.exports = {
   updatePosition: updatePosition,
   setContractSize: setContractSize,
   toggleTicker: toggleTicker,
+  setLastSignal: setLastSignal,
   logEvent: logEvent
 };

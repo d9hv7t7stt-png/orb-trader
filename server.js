@@ -11,6 +11,7 @@ const { getState, setContractSize, toggleTicker } = require("./utils/state");
 const { ensureLoggedIn, submitSmsCode, getPendingWorkflow, scheduleDailyReauth } = require("./utils/reauth");
 const rh = require("./utils/robinhood");
 const discord = require("./utils/discord");
+const market = require("./utils/market");
 
 process.on("unhandledRejection", (err) => {
   console.error("[UNHANDLED_REJECTION]", err && err.message ? err.message : err);
@@ -76,36 +77,7 @@ app.get("/api/buying-power", async (req, res) => {
 
 app.get("/api/prices", async (req, res) => {
   try {
-    var tickers = { SPY: "SPY", IWM: "IWM", QQQ: "QQQ", SPX: "^GSPC" };
-    async function getYahooPrice(display, symbol) {
-      return new Promise((resolve) => {
-        var options = {
-          hostname: "query1.finance.yahoo.com",
-          path: "/v8/finance/chart/" + encodeURIComponent(symbol) + "?interval=1d&range=1d",
-          headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0" }
-        };
-        var req2 = https.request(options, (r) => {
-          var raw = "";
-          r.on("data", (c) => { raw += c; });
-          r.on("end", () => {
-            try {
-              var parsed = JSON.parse(raw);
-              var meta = parsed.chart && parsed.chart.result && parsed.chart.result[0] && parsed.chart.result[0].meta;
-              resolve([display, {
-                price: meta ? (meta.regularMarketPrice || meta.previousClose || null) : null,
-                prev_close: meta ? (meta.chartPreviousClose || meta.previousClose || null) : null
-              }]);
-            } catch (e) {
-              resolve([display, { price: null, prev_close: null }]);
-            }
-          });
-        });
-        req2.on("error", () => resolve([display, { price: null, prev_close: null }]));
-        req2.end();
-      });
-    }
-    var results = await Promise.all(Object.entries(tickers).map(([d, s]) => getYahooPrice(d, s)));
-    res.json({ prices: Object.fromEntries(results) });
+    res.json({ prices: await market.fetchPrices() });
   } catch (e) {
     console.log("[PRICES_ERROR]", e.message);
     res.json({ prices: {} });
@@ -113,36 +85,76 @@ app.get("/api/prices", async (req, res) => {
 });
 
 app.get("/api/pnl", (req, res) => {
+  res.json(market.getPnlSummary());
+});
+
+app.get("/api/overview", async (req, res) => {
   try {
-    var pnlFile = "/tmp/swing-pnl.json";
-    if (!fs.existsSync(pnlFile)) {
-      return res.json({ daily: null, weekly: null, monthly: null, yearly: null });
+    var s = getState();
+    s.auth = { logged_in: !!rh.getToken(), pending: !!getPendingWorkflow() };
+    var openCount = Object.values(s.positions).filter(function (p) { return p && !p.stopped; }).length;
+    var buyingPower = null;
+    if (rh.getToken()) {
+      try {
+        var bpRes = await new Promise(function (resolve) {
+          var opts = {
+            hostname: "api.robinhood.com",
+            path: "/accounts/" + (process.env.RH_ACCOUNT_NUMBER || "") + "/",
+            headers: {
+              Authorization: "Bearer " + rh.getToken(),
+              Accept: "application/json",
+              "X-Robinhood-API-Version": "1.431.4",
+              "User-Agent": "Robinhood/823 (iPhone; iOS 16.0; Scale/3.00)"
+            }
+          };
+          var req3 = https.request(opts, function (r) {
+            var raw = "";
+            r.on("data", function (c) { raw += c; });
+            r.on("end", function () {
+              try { resolve(JSON.parse(raw)); } catch (e) { resolve({}); }
+            });
+          });
+          req3.on("error", function () { resolve({}); });
+          req3.end();
+        });
+        buyingPower = bpRes.buying_power || bpRes.cash || null;
+      } catch (e) {}
     }
-    var data = JSON.parse(fs.readFileSync(pnlFile, "utf8"));
-    var now = new Date();
-    var daily = 0;
-    var weekly = 0;
-    var monthly = 0;
-    var yearly = 0;
-    var hasData = false;
-    (data.trades || []).forEach(function (t) {
-      var d = new Date(t.time);
-      var pnl = parseFloat(t.pnl) || 0;
-      if (d.toDateString() === now.toDateString()) { daily += pnl; hasData = true; }
-      var weekAgo = new Date(now);
-      weekAgo.setDate(weekAgo.getDate() - 7);
-      if (d >= weekAgo) { weekly += pnl; hasData = true; }
-      var monthAgo = new Date(now);
-      monthAgo.setMonth(monthAgo.getMonth() - 1);
-      if (d >= monthAgo) { monthly += pnl; hasData = true; }
-      var yearAgo = new Date(now);
-      yearAgo.setFullYear(yearAgo.getFullYear() - 1);
-      if (d >= yearAgo) { yearly += pnl; hasData = true; }
+    res.json({
+      state: s,
+      prices: await market.fetchPrices(),
+      pnl: market.getPnlSummary(),
+      buying_power: buyingPower,
+      open_positions: openCount,
+      webhook_url: (req.protocol + "://" + req.get("host") + "/webhook").replace("http://", "https://"),
+      strategy: {
+        timeframe: "30-minute bar close (TradingView alert)",
+        modes: {
+          sma55: {
+            entry_call: "Close > 55 SMA",
+            entry_put: "Close < 55 SMA",
+            exit: "Close crosses back through 55 SMA"
+          },
+          ema21_sma55: {
+            entry_call: "Close > 21 EMA AND 21 EMA > 55 SMA",
+            entry_put: "Close < 21 EMA AND 21 EMA < 55 SMA",
+            exit: "Close crosses 55 SMA OR 21 EMA crosses 55 SMA against position"
+          }
+        },
+        profit: [
+          "Every +20% option gain → sell 10% of contracts",
+          "+100% gain → sell 50% of remaining",
+          "Weekly expected move hit → sell 30%"
+        ],
+        stops: [
+          "+50% gain → stop moves to breakeven",
+          "Every additional +50% → stop ratchets up 40% of entry"
+        ]
+      }
     });
-    res.json(hasData ? { daily, weekly, monthly, yearly } : { daily: null, weekly: null, monthly: null, yearly: null });
   } catch (e) {
-    console.log("[PNL_ERROR]", e.message);
-    res.json({ daily: null, weekly: null, monthly: null, yearly: null });
+    console.log("[OVERVIEW_ERROR]", e.message);
+    res.status(500).json({ error: e.message });
   }
 });
 

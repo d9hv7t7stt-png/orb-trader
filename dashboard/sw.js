@@ -1,4 +1,4 @@
-const CACHE = 'argus-swing-v1';
+const CACHE = 'argus-swing-v2';
 const ASSETS = ['/', '/manifest.json', '/icon.svg'];
 
 self.addEventListener('install', function(e) {
