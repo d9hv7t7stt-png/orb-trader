@@ -315,7 +315,7 @@ async function main() {
       var label = tickers.getDisplayTicker(t);
       assert.ok(watch.indexOf(label) !== -1, "missing " + label);
     });
-    assert.ok(watch.indexOf("```") !== -1);
+    assert.ok(watch.indexOf("```") === -1);
     assert.ok(watch.indexOf("│") === -1 && watch.indexOf("┼") === -1);
     assert.ok(watch.indexOf("21D:") !== -1 && watch.indexOf("55D:") !== -1);
     assert.ok(watch.indexOf("$SPX") !== -1);
@@ -334,15 +334,13 @@ async function main() {
     assert.ok(spxAt < spyAt && spyAt < nvdaAt && nvdaAt < xlbAt && xlbAt < xlyAt);
     assert.ok(watch.indexOf("$AAPL") !== -1);
     assert.ok(watch.indexOf("$XLU") !== -1);
-    var aligned = watch.replace(/```/g, "").split("\n").filter(function (line) {
+    var maLines = watch.split("\n").filter(function (line) {
       return line.indexOf("21D:") !== -1;
     });
-    assert.ok(aligned.length >= 10);
-    var col21 = aligned[0].indexOf("21D:");
-    var col55 = aligned[0].indexOf("55D:");
-    aligned.forEach(function (line) {
-      assert.strictEqual(line.indexOf("21D:"), col21, "21D: drifted: " + line);
-      assert.strictEqual(line.indexOf("55D:"), col55, "55D: drifted: " + line);
+    assert.ok(maLines.length >= 10);
+    maLines.forEach(function (line) {
+      assert.ok(line.indexOf("55D:") !== -1, "21D/55D should stay on one line: " + line);
+      assert.ok(line.length <= 40, "line too long for Discord mobile: " + line.length + " " + line);
     });
     main.fields.filter(function (f) { return f.name.indexOf("Watchlist") === 0; }).forEach(function (f) {
       assert.ok(f.value.length <= 1024, "embed field too long: " + f.value.length);
@@ -373,7 +371,8 @@ async function main() {
     pools.SPACE_DC_TICKERS.forEach(function (t) {
       assert.ok(blob.indexOf("$" + t) !== -1, "missing $" + t);
     });
-    assert.ok(blob.indexOf("```") !== -1 && blob.indexOf("│") === -1);
+    assert.ok(blob.indexOf("```") === -1 && blob.indexOf("│") === -1);
+    assert.ok(blob.indexOf("Entry ") !== -1 && blob.indexOf("P&L ") !== -1);
     assert.ok(blob.indexOf("$NVDA") !== -1);
     assert.ok(blob.indexOf("$49.25") !== -1);
     assert.ok(blob.indexOf("160 sh") !== -1);
