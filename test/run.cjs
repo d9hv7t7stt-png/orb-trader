@@ -233,10 +233,21 @@ async function main() {
     assert.strictEqual(byTicker.GOOGL.shares, 78);
     assert.strictEqual(byTicker.ASTS.shares, 180);
     assert.strictEqual(byTicker.ONDS.shares, 728);
-    var invested = lots.reduce(function (s, l) { return s + l.cost; }, 0);
+    var invested = lots.reduce(function (s, l) { return s + l.shares * l.rebalancePrice; }, 0);
     var cash = spaceDcBook.REBALANCE_EQUITY - invested;
     assert.ok(cash > 19000 && cash < 22000, "cash should be ~10%, got " + cash);
     assert.strictEqual(spaceDcBook.REBALANCE_EQUITY, 200000);
+  });
+
+  await test("entries blend $2,000 April lows with extra 6/30 rebalance shares", function () {
+    var lots = spaceDcBook.lotsWithShares();
+    var nvda = lots.find(function (l) { return l.ticker === "NVDA"; });
+    assert.strictEqual(nvda.aprilShares, 12);
+    assert.ok(Math.abs(nvda.entryPrice - 197.936) < 0.01, "blended NVDA entry " + nvda.entryPrice);
+    assert.ok(nvda.entryPrice < nvda.rebalancePrice);
+    var mraay = lots.find(function (l) { return l.ticker === "MRAAY"; });
+    assert.ok(mraay.entryPrice < mraay.rebalancePrice);
+    assert.strictEqual(spaceDcBook.APRIL_BUY_USD, 2000);
   });
 
   await test("seedSpaceDcBook writes 15 held lots and ~10% cash", function () {
@@ -349,7 +360,7 @@ async function main() {
       assert.ok(blob.indexOf("$" + t + " - ") !== -1, "missing $" + t);
     });
     assert.ok(blob.indexOf("```") === -1 && blob.indexOf("│") === -1);
-    assert.ok(blob.indexOf("$NVDA - $49.25 - 160 Shares - $200.09 - ") !== -1);
+    assert.ok(blob.indexOf("$NVDA - $49.25 - 160 Shares - $197.94 - ") !== -1);
     assert.ok(blob.indexOf("$CASH - ") !== -1);
     assert.ok(blob.indexOf("$IRDM - Sold @ $54") !== -1);
     assert.ok(blob.indexOf("21-Day") === -1);

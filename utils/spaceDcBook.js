@@ -1,29 +1,33 @@
-// Space DC book reconstructed from the 6/30/26 rebalance chart:
-// IRDM out, 10% cash, NVDA/GOOGL as anchors, remaining names at 8/7/6/4/3%.
-// Book sized at $200,000. Shares = round(weight × $200,000 / 6/30/26 close). Entry = that close.
+// Space DC book:
+// 1) $2,000 added to each name at its April 2026 low
+// 2) 6/30/26 rebalance on a $200,000 book (IRDM out, 10% cash, NVDA/GOOGL anchors)
+// Current shares = round(weight × $200,000 / 6/30 close)
+// Entry = blended: April $2,000 lot + extra shares filled at the 6/30 close
 
 var paper = require("./paper");
 var pools = require("./pools");
 
 var REBALANCE_EQUITY = 200000;
+var APRIL_BUY_USD = 2000;
+var BOOK_VERSION = 3;
 var REBALANCE_TIME = "2026-06-30T19:52:00.000Z"; // 3:52 PM ET
 
 var LOTS = [
-  { ticker: "NVDA", weight: 0.16, entryPrice: 200.09 },
-  { ticker: "GOOGL", weight: 0.14, entryPrice: 357.37 },
-  { ticker: "ASTS", weight: 0.08, entryPrice: 88.86 },
-  { ticker: "RKLB", weight: 0.07, entryPrice: 101.65 },
-  { ticker: "PL", weight: 0.06, entryPrice: 33.13 },
-  { ticker: "MRAAY", weight: 0.06, entryPrice: 36.20 },
-  { ticker: "BE", weight: 0.04, entryPrice: 302.70 },
-  { ticker: "SMR", weight: 0.04, entryPrice: 10.03 },
-  { ticker: "OKLO", weight: 0.04, entryPrice: 52.33 },
-  { ticker: "LEU", weight: 0.04, entryPrice: 167.87 },
-  { ticker: "NVTS", weight: 0.04, entryPrice: 17.92 },
-  { ticker: "RDW", weight: 0.04, entryPrice: 12.23 },
-  { ticker: "LUNR", weight: 0.03, entryPrice: 21.39 },
-  { ticker: "RGTI", weight: 0.03, entryPrice: 19.32 },
-  { ticker: "ONDS", weight: 0.03, entryPrice: 8.24 }
+  { ticker: "NVDA", weight: 0.16, rebalancePrice: 200.09, aprilLow: 171.37, aprilDate: "2026-04-02" },
+  { ticker: "GOOGL", weight: 0.14, rebalancePrice: 357.37, aprilLow: 289.45, aprilDate: "2026-04-02" },
+  { ticker: "ASTS", weight: 0.08, rebalancePrice: 88.86, aprilLow: 67.49, aprilDate: "2026-04-29" },
+  { ticker: "RKLB", weight: 0.07, rebalancePrice: 101.65, aprilLow: 61.86, aprilDate: "2026-04-02" },
+  { ticker: "PL", weight: 0.06, rebalancePrice: 33.13, aprilLow: 28.52, aprilDate: "2026-04-01" },
+  { ticker: "MRAAY", weight: 0.06, rebalancePrice: 36.20, aprilLow: 10.75, aprilDate: "2026-04-02" },
+  { ticker: "BE", weight: 0.04, rebalancePrice: 302.70, aprilLow: 123.16, aprilDate: "2026-04-02" },
+  { ticker: "SMR", weight: 0.04, rebalancePrice: 10.03, aprilLow: 8.85, aprilDate: "2026-04-13" },
+  { ticker: "OKLO", weight: 0.04, rebalancePrice: 52.33, aprilLow: 44.91, aprilDate: "2026-04-07" },
+  { ticker: "LEU", weight: 0.04, rebalancePrice: 167.87, aprilLow: 165.67, aprilDate: "2026-04-07" },
+  { ticker: "NVTS", weight: 0.04, rebalancePrice: 17.92, aprilLow: 8.05, aprilDate: "2026-04-02" },
+  { ticker: "RDW", weight: 0.04, rebalancePrice: 12.23, aprilLow: 8.47, aprilDate: "2026-04-29" },
+  { ticker: "LUNR", weight: 0.03, rebalancePrice: 21.39, aprilLow: 19.10, aprilDate: "2026-04-01" },
+  { ticker: "RGTI", weight: 0.03, rebalancePrice: 19.32, aprilLow: 12.81, aprilDate: "2026-04-02" },
+  { ticker: "ONDS", weight: 0.03, rebalancePrice: 8.24, aprilLow: 8.46, aprilDate: "2026-04-02" }
 ];
 
 var CASH_WEIGHT = 0.10;
@@ -32,15 +36,25 @@ var SOLD = [{ ticker: "IRDM", note: "Sold @ $54 — out at rebalance" }];
 function lotsWithShares() {
   return LOTS.map(function (lot) {
     var target = REBALANCE_EQUITY * lot.weight;
-    var shares = Math.max(1, Math.round(target / lot.entryPrice));
-    var cost = shares * lot.entryPrice;
+    var shares = Math.max(1, Math.round(target / lot.rebalancePrice));
+    var aprilShares = Math.max(1, Math.round(APRIL_BUY_USD / lot.aprilLow));
+    var aprilCost = aprilShares * lot.aprilLow;
+    var extra = Math.max(0, shares - aprilShares);
+    var cost = extra > 0
+      ? aprilCost + extra * lot.rebalancePrice
+      : shares * lot.aprilLow;
+    var entryPrice = cost / shares;
     return {
       ticker: lot.ticker,
       weight: lot.weight,
-      entryPrice: lot.entryPrice,
+      rebalancePrice: lot.rebalancePrice,
+      aprilLow: lot.aprilLow,
+      aprilDate: lot.aprilDate,
+      aprilShares: aprilShares,
       target: target,
       shares: shares,
-      cost: cost
+      cost: cost,
+      entryPrice: entryPrice
     };
   });
 }
@@ -49,25 +63,26 @@ function applyBook(p) {
   var lots = lotsWithShares();
   p.startingBalance = REBALANCE_EQUITY;
   p.positions = {};
-  var invested = 0;
+  var investedAtRebalance = 0;
   lots.forEach(function (lot) {
     var key = paper.positionKey(lot.ticker, "rebalance");
     p.positions[key] = {
       ticker: lot.ticker,
       maKey: "rebalance",
-      maLabel: "Rebalance 6/30/26",
+      maLabel: "April low + 6/30 rebalance",
       shares: lot.shares,
       totalShares: lot.shares,
-      entryPrice: lot.entryPrice,
-      entryTime: REBALANCE_TIME,
+      entryPrice: parseFloat(lot.entryPrice.toFixed(4)),
+      entryTime: lot.aprilDate + "T16:00:00.000Z",
       costBasis: parseFloat(lot.cost.toFixed(2)),
       lastProfitTier: 0,
       heldBook: true
     };
-    invested += lot.cost;
+    investedAtRebalance += lot.shares * lot.rebalancePrice;
   });
-  p.cash = parseFloat((REBALANCE_EQUITY - invested).toFixed(2));
+  p.cash = parseFloat((REBALANCE_EQUITY - investedAtRebalance).toFixed(2));
   p.seededFromRebalance = true;
+  p.seededBookVersion = BOOK_VERSION;
   p.wins = p.wins || 0;
   p.losses = p.losses || 0;
   p.trades = p.trades || [];
@@ -76,7 +91,7 @@ function applyBook(p) {
 
 function seedSpaceDcBook(force) {
   var p = paper.getPortfolio("space_dc");
-  if (!force && p.seededFromRebalance && p.startingBalance === REBALANCE_EQUITY) return p;
+  if (!force && p.seededBookVersion === BOOK_VERSION) return p;
   return paper.replacePortfolio("space_dc", applyBook);
 }
 
@@ -94,6 +109,8 @@ function watchlistTickers() {
 
 module.exports = {
   REBALANCE_EQUITY: REBALANCE_EQUITY,
+  APRIL_BUY_USD: APRIL_BUY_USD,
+  BOOK_VERSION: BOOK_VERSION,
   REBALANCE_TIME: REBALANCE_TIME,
   LOTS: LOTS,
   CASH_WEIGHT: CASH_WEIGHT,
