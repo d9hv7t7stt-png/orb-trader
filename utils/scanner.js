@@ -24,7 +24,36 @@ function markAlert(ticker, maKey) {
   state.setLastAlert(ticker + ":" + maKey, new Date().toISOString());
 }
 
-async function processTicker(data) {
+async function processStopLosses(results) {
+  var exits = 0;
+  var livePrices = {};
+  Object.values(results).forEach(function (r) {
+    if (r && r.price) livePrices[r.ticker] = { price: r.price };
+  });
+
+  paper.getOpenPositions().forEach(function (entry) {
+    var key = entry.key;
+    var pos = entry.pos;
+    var data = results[pos.ticker];
+    if (!data || !data.price || !data.levels) return;
+
+    var sma55 = data.levels.find(function (l) { return l.key === tickers.STOP_MA_KEY; });
+    if (!sma55 || sma55.value == null) return;
+
+    if (data.price < sma55.value) {
+      var trade = paper.sell(key, data.price, "Stop loss — close below 55-Day SMA ($" + sma55.value.toFixed(2) + ")");
+      if (trade) {
+        exits++;
+        state.logEvent("STOP_LOSS", pos.ticker + " sold @ $" + data.price + " (below 55 SMA $" + sma55.value.toFixed(2) + ")");
+        discord.postStockExit(pos.ticker, pos.maLabel, data.price, trade.pnl, trade.pct, trade.reason, "stop").catch(function () {});
+      }
+    }
+  });
+
+  return exits;
+}
+
+async function processTicker(data, livePrices) {
   if (data.error || !data.price) return { alerts: 0, entries: 0 };
 
   var ticker = data.ticker;
@@ -44,12 +73,13 @@ async function processTicker(data) {
     }
 
     if (!paper.hasPosition(ticker, level.key)) {
-      var shares = Math.floor(tickers.TRADE_SIZE / data.price);
-      var trade = paper.buy(ticker, level.key, level.label, data.price, shares, "MA proximity entry");
+      var riskUsd = paper.getPositionSizeUSD(livePrices);
+      var shares = Math.floor(riskUsd / data.price);
+      var trade = paper.buy(ticker, level.key, level.label, data.price, shares, "MA proximity entry", riskUsd);
       if (trade) {
         entries++;
-        state.logEvent("STOCK_BUY", ticker + " " + shares + "sh @ $" + data.price + " (" + level.label + ")");
-        discord.postStockEntry(ticker, level.label, data.price, shares, trade.total, level.proximity_pct).catch(function () {});
+        state.logEvent("STOCK_BUY", ticker + " " + shares + "sh @ $" + data.price + " (" + level.label + ", " + riskUsd + " risk)");
+        discord.postStockEntry(ticker, level.label, data.price, shares, trade.total, level.proximity_pct, riskUsd).catch(function () {});
       }
     }
   });
@@ -71,6 +101,13 @@ async function runScan(force) {
     var results = await indicators.fetchAllIndicators(list);
     state.setScanResults(results);
 
+    var livePrices = {};
+    Object.values(results).forEach(function (r) {
+      if (r && r.price) livePrices[r.ticker] = { price: r.price };
+    });
+
+    var totalExits = await processStopLosses(results);
+
     var totalAlerts = 0;
     var totalEntries = 0;
     var nearHits = [];
@@ -79,7 +116,7 @@ async function runScan(force) {
       var t = list[i];
       var data = results[t];
       if (!data) continue;
-      var out = await processTicker(data);
+      var out = await processTicker(data, livePrices);
       totalAlerts += out.alerts;
       totalEntries += out.entries;
       if (data.levels) {
@@ -89,14 +126,10 @@ async function runScan(force) {
       }
     }
 
-    var livePrices = {};
-    Object.values(results).forEach(function (r) {
-      if (r && r.price) livePrices[r.ticker] = { price: r.price };
-    });
     var unrealized = paper.getUnrealizedPnL(livePrices);
     var equity = paper.getEquity(livePrices);
 
-    state.logEvent("SCAN_DONE", totalAlerts + " alerts, " + totalEntries + " entries, equity $" + equity.toFixed(0));
+    state.logEvent("SCAN_DONE", totalAlerts + " alerts, " + totalEntries + " entries, " + totalExits + " stops, equity $" + equity.toFixed(0));
 
     return {
       ok: true,
@@ -104,6 +137,7 @@ async function runScan(force) {
       tickers: list.length,
       alerts: totalAlerts,
       entries: totalEntries,
+      exits: totalExits,
       near_hits: nearHits,
       equity: equity,
       unrealized: unrealized.total

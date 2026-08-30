@@ -53,6 +53,7 @@ body{background:var(--bg);color:var(--white);font-family:-apple-system,BlinkMacS
 .log-row{display:grid;grid-template-columns:48px 80px 1fr;gap:6px;padding:6px 8px;border-bottom:1px solid var(--border)}
 .log-type{font-size:9px;font-weight:600;text-transform:uppercase}
 .log-type.STOCK_BUY,.log-type.MA_NEAR{color:var(--blue)}
+.log-type.STOP_LOSS{color:var(--red)}
 .log-type.SCAN,.log-type.SCAN_DONE{color:var(--green)}
 .toggle{width:40px;height:24px;background:var(--surface2);border-radius:12px;border:1px solid var(--border);position:relative;cursor:pointer}
 .toggle.on{background:var(--green);border-color:var(--green)}
@@ -93,6 +94,7 @@ body{background:var(--bg);color:var(--white);font-family:-apple-system,BlinkMacS
     <div class="stat"><div class="stat-l">Unrealized</div><div class="stat-v" id="s-unreal">—</div></div>
     <div class="stat"><div class="stat-l">Daily P&L</div><div class="stat-v" id="s-daily">—</div></div>
     <div class="stat"><div class="stat-l">Near MA (1%)</div><div class="stat-v" id="s-near">0</div></div>
+    <div class="stat"><div class="stat-l">Next Entry (2%)</div><div class="stat-v" id="s-size" style="font-size:15px">—</div></div>
   </div>
   <main class="main">
     <div class="page active" id="page-scanner">
@@ -115,6 +117,8 @@ body{background:var(--bg);color:var(--white);font-family:-apple-system,BlinkMacS
     <div class="page" id="page-strategy">
       <div class="panel"><div class="panel-head"><span class="panel-title">How it works</span></div>
       <div class="panel-body" id="strategy-body"></div></div>
+      <div class="panel"><div class="panel-head"><span class="panel-title">Discord role setup (examples)</span></div>
+      <div class="panel-body" id="discord-roles"></div></div>
       <div class="panel"><div class="panel-head"><span class="panel-title">What you can add next</span></div>
       <div class="panel-body">
         <div class="rule">• <strong>Exit rules</strong> — stop loss % below entry MA, trailing stop, or time-based exits</div>
@@ -179,6 +183,7 @@ function render() {
   d.textContent = data.pnl.daily != null ? fmt(data.pnl.daily, 0) : '—';
   d.className = 'stat-v' + (data.pnl.daily > 0 ? ' pos' : data.pnl.daily < 0 ? ' neg' : '');
   document.getElementById('s-near').textContent = data.near_hits.length;
+  document.getElementById('s-size').textContent = data.trade_size ? fmt(data.trade_size, 0) : '—';
 
   const banner = document.getElementById('near-banner');
   if (data.near_hits.length) {
@@ -213,12 +218,23 @@ function render() {
 
   const s = data.strategy;
   document.getElementById('strategy-body').innerHTML = `
-    <div class="rule"><strong>Data:</strong> ${s.data_source} — auto-scans every 30 min during market hours</div>
+    <div class="rule"><strong>Data:</strong> ${s.data_source} — scans every 30 min + after the bell (4:05 PM ET)</div>
     <div class="rule"><strong>Entry:</strong> ${s.entry}</div>
+    <div class="rule"><strong>Position size:</strong> ${s.sizing || (data.risk_pct + '% of equity')}</div>
+    <div class="rule"><strong>Stop loss:</strong> ${s.exit || 'Close below 55-Day SMA'}</div>
     <div class="rule"><strong>MA levels:</strong> ${s.levels.join(' · ')}</div>
-    <div class="rule"><strong>Account:</strong> ${s.account}</div>
-    <div class="rule"><strong>Discord:</strong> Proximity alerts + every paper buy + daily P&L summary at 4pm ET</div>
-    <div class="rule">No TradingView required — Yahoo Finance computes all moving averages server-side.</div>`;
+    <div class="rule"><strong>Account:</strong> ${s.account}</div>`;
+
+  if (s.discord_roles) {
+    document.getElementById('discord-roles').innerHTML = `
+      <div class="rule">Create roles in Discord → Server Settings → Roles. Enable Developer Mode, right-click role → <strong>Copy ID</strong>. Add to Railway:</div>
+      <div class="rule"><strong>@Traders</strong> — <code>DISCORD_ROLE_ENTRIES</code> — ping on every paper buy</div>
+      <div class="rule"><strong>@Risk</strong> — <code>DISCORD_ROLE_STOPS</code> — ping on 55 SMA stop-loss exits</div>
+      <div class="rule"><strong>@Alerts</strong> — <code>DISCORD_ROLE_PROXIMITY</code> — ping when price within 1% of a MA (noisy)</div>
+      <div class="rule"><strong>@Daily</strong> — <code>DISCORD_ROLE_DAILY</code> — ping on after-the-bell P&L summary</div>
+      <div class="rule"><strong>@Everyone fallback</strong> — <code>DISCORD_ROLE_ALERTS</code> — used if specific role not set</div>
+      <div class="rule" style="margin-top:10px;color:var(--dim)">Example: only @Daily for end-of-day, @Traders + @Risk for action items, skip @Alerts if too many pings.</div>`;
+  }
 
   const log = data.state.log || [];
   document.getElementById('log-box').innerHTML = log.slice(0,100).map(e => {

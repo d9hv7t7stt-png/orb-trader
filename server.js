@@ -80,18 +80,32 @@ app.get("/api/overview", async (req, res) => {
       tickers: tickers.getAllTickers(),
       ma_levels: tickers.MA_LEVELS,
       proximity_pct: tickers.PROXIMITY_PCT * 100,
-      trade_size: tickers.TRADE_SIZE,
+      risk_pct: tickers.RISK_PCT * 100,
+      trade_size: paper.getPositionSizeUSD(livePrices),
       strategy: {
         data_source: "Yahoo Finance",
         entry: "Paper buy when price within " + (tickers.PROXIMITY_PCT * 100) + "% of any monitored MA",
+        sizing: (tickers.RISK_PCT * 100) + "% of equity per entry (~" + formatUsd(paper.getPositionSizeUSD(livePrices)) + " at current equity)",
+        exit: "Stop loss when price closes below 55-Day SMA",
         levels: tickers.MA_LEVELS.map(function (l) { return l.label; }),
-        account: "$50,000 paper · $" + tickers.TRADE_SIZE + " per entry"
+        account: "$50,000 paper",
+        discord_roles: {
+          DISCORD_ROLE_ENTRIES: "Ping on paper buys (e.g. @Traders)",
+          DISCORD_ROLE_STOPS: "Ping on stop-loss exits (e.g. @Risk)",
+          DISCORD_ROLE_PROXIMITY: "Ping on MA proximity alerts (e.g. @Alerts)",
+          DISCORD_ROLE_DAILY: "Ping on after-the-bell P&L (e.g. @Daily)",
+          DISCORD_ROLE_ALERTS: "Fallback ping for all alert types"
+        }
       }
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
+
+function formatUsd(n) {
+  return "$" + Math.round(n).toLocaleString("en-US");
+}
 
 app.post("/api/scan", async (req, res) => {
   try {

@@ -35,13 +35,34 @@ async function httpPost(url, data) {
   });
 }
 
-async function sendDiscord(payload) {
+async function sendDiscord(payload, roleType) {
   if (!DISCORD_WEBHOOK) return;
   try {
+    var ping = rolePing(roleType);
+    if (ping && !payload.content) payload.content = ping;
+    else if (ping && payload.content) payload.content = ping + " " + payload.content;
     await httpPost(DISCORD_WEBHOOK, payload);
   } catch(err) {
     console.log("[DISCORD_ERROR]", err.message);
   }
+}
+
+// Role pings — set role IDs in Railway (Developer Mode → right-click role → Copy ID)
+// Example setup:
+//   DISCORD_ROLE_ENTRIES=1234567890   → @Traders role on every paper buy
+//   DISCORD_ROLE_STOPS=1234567891     → @Risk role on stop-loss exits
+//   DISCORD_ROLE_PROXIMITY=1234567892 → @Alerts role on MA proximity (optional, can be noisy)
+//   DISCORD_ROLE_DAILY=1234567893     → @Daily role on after-the-bell P&L summary
+function rolePing(type) {
+  var map = {
+    entry: process.env.DISCORD_ROLE_ENTRIES,
+    stop: process.env.DISCORD_ROLE_STOPS,
+    proximity: process.env.DISCORD_ROLE_PROXIMITY,
+    daily: process.env.DISCORD_ROLE_DAILY
+  };
+  var id = map[type] || process.env.DISCORD_ROLE_ALERTS;
+  if (!id) return null;
+  return "<@&" + id + ">";
 }
 
 // Legacy options tracking (unused in paper stock mode)
@@ -334,21 +355,32 @@ async function postDailySummary() {
 }
 
 function scheduleDailySummary() {
-  function msUntil4pmET() {
+  function msUntilAfterBell() {
     var now = new Date();
     var target = new Date();
-    target.setUTCHours(20, 0, 0, 0);
+    target.setUTCHours(20, 5, 0, 0);
     if (target <= now) target.setUTCDate(target.getUTCDate() + 1);
     return target - now;
   }
+  async function runAfterBell() {
+    var stateMod = require("./state");
+    var scannerMod = require("./scanner");
+    await scannerMod.runScan(true);
+    var s = stateMod.getState();
+    var livePrices = {};
+    Object.values(s.scanResults || {}).forEach(function (r) {
+      if (r && r.price) livePrices[r.ticker] = { price: r.price };
+    });
+    await postStockDailySummary(livePrices);
+  }
   function scheduleNext() {
-    setTimeout(async function() {
-      await postStockDailySummary();
+    setTimeout(async function () {
+      await runAfterBell();
       scheduleNext();
-    }, msUntil4pmET());
+    }, msUntilAfterBell());
   }
   scheduleNext();
-  console.log("[DISCORD] Daily stock summary scheduled");
+  console.log("[DISCORD] After-the-bell summary scheduled (4:05 PM ET — scan + P&L)");
 }
 
 // ── Paper stock notifications ─────────────────────────────────────────────────
@@ -364,10 +396,10 @@ async function postProximityAlert(ticker, price, level) {
     ],
     footer: { text: accountFooter() },
     timestamp: new Date().toISOString()
-  }]});
+  }] }, "proximity");
 }
 
-async function postStockEntry(ticker, maLabel, price, shares, total, proximityPct) {
+async function postStockEntry(ticker, maLabel, price, shares, total, proximityPct, riskUsd) {
   await sendDiscord({ embeds: [{
     color: 0x00e5a0,
     title: "📈 STOCK BUY — " + ticker,
@@ -376,15 +408,15 @@ async function postStockEntry(ticker, maLabel, price, shares, total, proximityPc
       { name: "Shares", value: String(shares), inline: true },
       { name: "Price", value: "$" + price.toFixed(2), inline: true },
       { name: "Cost", value: formatMoney(total), inline: true },
-      { name: "MA Proximity", value: proximityPct + "%", inline: true },
-      { name: "Type", value: "Paper · Common Stock", inline: true }
+      { name: "Risk Size", value: formatMoney(riskUsd) + " (2% equity)", inline: true },
+      { name: "MA Proximity", value: proximityPct + "%", inline: true }
     ],
     footer: { text: accountFooter() },
     timestamp: new Date().toISOString()
-  }]});
+  }] }, "entry");
 }
 
-async function postStockExit(ticker, maLabel, exitPrice, pnl, pct, reason) {
+async function postStockExit(ticker, maLabel, exitPrice, pnl, pct, reason, roleType) {
   var color = pnl >= 0 ? 0x00e5a0 : 0xff4d6a;
   await sendDiscord({ embeds: [{
     color: color,
@@ -397,37 +429,50 @@ async function postStockExit(ticker, maLabel, exitPrice, pnl, pct, reason) {
     ],
     footer: { text: accountFooter() },
     timestamp: new Date().toISOString()
-  }]});
+  }] }, roleType || "stop");
 }
 
-async function postStockDailySummary() {
-  var paper = require("./paper");
-  var p = paper.getPortfolio();
-  var unreal = paper.getUnrealizedPnL({});
-  var pnlSum = paper.getPnlSummary();
-  var equity = paper.getEquity({});
+async function postStockDailySummary(livePrices) {
+  var paperMod = require("./paper");
+  var p = paperMod.getPortfolio();
+  var unreal = paperMod.getUnrealizedPnL(livePrices || {});
+  var pnlSum = paperMod.getPnlSummary();
+  var equity = paperMod.getEquity(livePrices || {});
   var netPnl = equity - p.startingBalance;
   var color = netPnl >= 0 ? 0x00e5a0 : 0xff4d6a;
+  var riskPct = (parseFloat(process.env.RISK_PCT || "2")).toFixed(0);
+
+  var closedToday = p.trades.filter(function (t) {
+    return t.type === "sell" && new Date(t.time).toDateString() === new Date().toDateString();
+  });
+  var tradeLines = closedToday.map(function (t) {
+    var e = t.pnl >= 0 ? "✅" : "🔴";
+    return e + " " + t.ticker + ": " + formatMoney(t.pnl) + " (" + formatPct(t.pct) + ") — " + t.reason;
+  }).join("\n") || "No closed trades today";
 
   var openLines = Object.values(p.positions).map(function (pos) {
-    return "• " + pos.ticker + " (" + pos.maLabel + ") " + pos.shares + "sh @ $" + pos.entryPrice.toFixed(2);
+    var px = livePrices && livePrices[pos.ticker] ? livePrices[pos.ticker].price : pos.entryPrice;
+    var u = (px - pos.entryPrice) * pos.shares;
+    return "• " + pos.ticker + " (" + pos.maLabel + ") " + pos.shares + "sh · uP&L " + formatMoney(u);
   }).join("\n") || "No open positions";
 
   await sendDiscord({ embeds: [{
     color: color,
-    title: "📊 DAILY PAPER P&L — " + new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    title: "🔔 AFTER THE BELL — Daily P&L · " + new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }),
     fields: [
       { name: "Equity", value: formatMoney(equity), inline: true },
       { name: "Cash", value: formatMoney(p.cash), inline: true },
       { name: "Unrealized", value: formatMoney(unreal.total), inline: true },
       { name: "Realized Today", value: pnlSum.daily != null ? formatMoney(pnlSum.daily) : "—", inline: true },
-      { name: "Net P&L", value: formatMoney(netPnl), inline: true },
-      { name: "W/L", value: p.wins + " / " + p.losses, inline: true },
-      { name: "Open Positions", value: openLines, inline: false }
+      { name: "Net P&L (All Time)", value: formatMoney(netPnl), inline: true },
+      { name: "W / L", value: p.wins + " / " + p.losses, inline: true },
+      { name: "Closed Trades Today", value: tradeLines, inline: false },
+      { name: "Open Positions", value: openLines, inline: false },
+      { name: "Next Entry Size", value: formatMoney(paperMod.getPositionSizeUSD(livePrices || {})) + " (" + riskPct + "% of equity)", inline: false }
     ],
-    footer: { text: "Argus Paper Stock · Starting $50,000" },
+    footer: { text: "Argus Paper Stock · $50,000 start · Stop: close below 55-Day SMA" },
     timestamp: new Date().toISOString()
-  }]});
+  }] }, "daily");
 }
 
 module.exports = {
