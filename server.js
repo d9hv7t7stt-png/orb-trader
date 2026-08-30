@@ -139,6 +139,18 @@ app.get("/api/overview", async (req, res) => {
   }
 });
 
+app.post("/api/test-premarket", requireAuth, async (req, res) => {
+  try {
+    var poolId = parsePoolId((req.query && req.query.pool) || (req.body && req.body.pool) || "main");
+    if (!poolId) return res.status(400).json({ error: "Invalid pool" });
+    await scanner.runScan(true, { quotesOnly: true });
+    await discord.postSundayPremarketPool(poolId, discord.livePricesFromState());
+    res.json({ ok: true, pool: poolId, message: "Sunday premarket test sent to Discord" });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.post("/api/scan", requireAuth, async (req, res) => {
   try {
     res.json(await scanner.runScan(true));

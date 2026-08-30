@@ -328,6 +328,15 @@ function buildSundayPremarketEmbeds(livePricesByPool) {
   });
 }
 
+async function postSundayPremarketPool(poolId, livePricesByPool) {
+  var embed = buildSundayPremarketEmbeds(livePricesByPool).find(function (e) {
+    var label = pools.getPool(poolId).shortLabel;
+    return e.title.indexOf("[" + label + "]") === 0;
+  });
+  if (!embed) throw new Error("No embed for pool " + poolId);
+  await sendDiscord({ embeds: [embed] }, "daily");
+}
+
 async function postSundayPremarket(livePricesByPool) {
   await sendDiscord({
     embeds: buildSundayPremarketEmbeds(livePricesByPool)
@@ -343,5 +352,7 @@ module.exports = {
   postTakeProfit: postTakeProfit,
   postStockDailySummary: postStockDailySummary,
   postSundayPremarket: postSundayPremarket,
-  buildSundayPremarketEmbeds: buildSundayPremarketEmbeds
+  postSundayPremarketPool: postSundayPremarketPool,
+  buildSundayPremarketEmbeds: buildSundayPremarketEmbeds,
+  livePricesFromState: livePricesFromState
 };
