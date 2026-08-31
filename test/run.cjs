@@ -447,6 +447,13 @@ async function main() {
     assert.strictEqual(JSON.stringify(space).toLowerCase().indexOf("paper") === -1, true);
   });
 
+  await test("how-to-read guide covers score and 21D guidance", function () {
+    var text = discord.howToReadGuideText();
+    assert.ok(text.indexOf("70+") !== -1);
+    assert.ok(text.indexOf("21D") !== -1);
+    assert.ok(text.indexOf("VIX") !== -1);
+  });
+
   console.log("\nexpansion");
   var indicators = require("../utils/indicators");
   var journalMod = require("../utils/journal");

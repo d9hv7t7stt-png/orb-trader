@@ -61,9 +61,16 @@ async function httpPost(url, data) {
 async function sendDiscord(payload, roleType) {
   if (!DISCORD_WEBHOOK) return;
   try {
-    var ping = rolePing(roleType);
-    if (ping && !payload.content) payload.content = ping;
-    else if (ping && payload.content) payload.content = ping + " " + payload.content;
+    if (roleType === "everyone") {
+      payload.content = payload.content
+        ? "@everyone " + payload.content
+        : "@everyone";
+      payload.allowed_mentions = { parse: ["everyone"] };
+    } else {
+      var ping = rolePing(roleType);
+      if (ping && !payload.content) payload.content = ping;
+      else if (ping && payload.content) payload.content = ping + " " + payload.content;
+    }
     await httpPost(DISCORD_WEBHOOK, payload);
   } catch (err) {
     console.log("[DISCORD_ERROR]", err.message);
@@ -281,6 +288,50 @@ function scheduleNearMaDigest() {
   console.log("[DISCORD] Near MA digest scheduled weekdays at " + hours.map(function (h) {
     return marketHours.formatHourEt(h);
   }).join(", "));
+}
+
+function howToReadGuideText() {
+  return [
+    "**How to read Argus MA alerts**",
+    "",
+    "• **Title score (0–100)** = setup quality. Focus **70+**, consider **55–69**, skip **<55**.",
+    "• **Near 21D** = primary swing entry zone. **Near 55D** = context / watch, not the main buy trigger.",
+    "• Prefer names near **21D**, score **≥70**, in a bullish regime (SPY/QQQ above 200D).",
+    "• Same ticker may ping twice (21D + 55D) — treat it as **one** setup, use the score once.",
+    "• Higher **VIX** = smaller size / more caution. Low score usually means weak RS, regime, or risk filters."
+  ].join("\n");
+}
+
+async function postHowToReadGuide() {
+  await sendDiscord({
+    embeds: [{
+      color: 0x4da6ff,
+      title: "📖 HOW TO READ ARGUS — Premarket reminder",
+      description: howToReadGuideText(),
+      footer: { text: "Argus · Daily premarket · Weekdays" },
+      timestamp: new Date().toISOString()
+    }]
+  }, "everyone");
+}
+
+function scheduleHowToPremarket() {
+  var hour = parseInt(process.env.HOWTO_PREMARKET_HOUR || "8", 10);
+  var minute = parseInt(process.env.HOWTO_PREMARKET_MIN || "45", 10);
+  if (isNaN(hour) || hour < 0 || hour > 23) hour = 8;
+  if (isNaN(minute) || minute < 0 || minute > 59) minute = 45;
+
+  async function runGuide() {
+    await postHowToReadGuide();
+  }
+
+  function scheduleNext() {
+    setTimeout(async function () {
+      await runGuide();
+      scheduleNext();
+    }, marketHours.msUntilNextWeekdayClock(hour, minute));
+  }
+  scheduleNext();
+  console.log("[DISCORD] How-to-read guide scheduled weekdays " + hour + ":" + (minute < 10 ? "0" : "") + minute + " ET (@everyone)");
 }
 
 function scheduleSectorRankDaily() {
@@ -671,12 +722,15 @@ module.exports = {
   scheduleNearMaDigest: scheduleNearMaDigest,
   scheduleSectorRankDaily: scheduleSectorRankDaily,
   scheduleSectorRankWeekly: scheduleSectorRankWeekly,
+  scheduleHowToPremarket: scheduleHowToPremarket,
   postProximityAlert: postProximityAlert,
   postOptionsOverlay: postOptionsOverlay,
   postWeeklyJournal: postWeeklyJournal,
   postNearMaDigest: postNearMaDigest,
   postSectorRankDaily: postSectorRankDaily,
   postSectorRankWeekly: postSectorRankWeekly,
+  postHowToReadGuide: postHowToReadGuide,
+  howToReadGuideText: howToReadGuideText,
   postStockEntry: postStockEntry,
   postStockExit: postStockExit,
   postTakeProfit: postTakeProfit,

@@ -133,6 +133,7 @@ app.get("/api/overview", async (req, res) => {
         options_overlay: "Near 21D + IV rank ≤ " + tickers.OPTIONS_IV_RANK_MAX + "% (Yahoo options chain)",
         near_ma_digest: "Weekday digests at " + (process.env.NEAR_MA_DIGEST_HOURS || "12,15") + ":00 ET",
         weekly_journal: "Friday 4:10 PM ET closed-trade rollup",
+        howto_guide: "Weekday premarket how-to-read @everyone at " + (process.env.HOWTO_PREMARKET_HOUR || "8") + ":" + String(process.env.HOWTO_PREMARKET_MIN || "45").padStart(2, "0") + " ET",
         backup: "Daily snapshot of /data to backups/ (keep " + (process.env.BACKUP_KEEP || "14") + ")",
         account: pools.getAllPools().map(function (p) {
           return p.shortLabel;
@@ -305,6 +306,15 @@ app.post("/api/test-premarket", requireAuth, async (req, res) => {
   }
 });
 
+app.post("/api/test-howto", requireAuth, async (req, res) => {
+  try {
+    await discord.postHowToReadGuide();
+    res.json({ ok: true, message: "How-to-read guide sent to Discord (@everyone)" });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.post("/api/scan", requireAuth, async (req, res) => {
   try {
     res.json(await scanner.runScan(true));
@@ -378,5 +388,6 @@ app.listen(PORT, () => {
   discord.scheduleNearMaDigest();
   discord.scheduleSectorRankDaily();
   discord.scheduleSectorRankWeekly();
+  discord.scheduleHowToPremarket();
   backup.scheduleBackups();
 });
