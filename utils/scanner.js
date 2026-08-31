@@ -45,6 +45,32 @@ function isBelowStopMA(data) {
   return checkPrice < sma55.value;
 }
 
+function isAboveStopMA(data) {
+  if (!data || !data.levels || data.price == null) return false;
+  var sma55 = data.levels.find(function (l) { return l.key === tickers.STOP_MA_KEY; });
+  if (!sma55 || sma55.value == null) return false;
+  return data.price > sma55.value;
+}
+
+function isEarningsBlackout(data) {
+  if (data.daysToEarnings == null) return false;
+  var d = parseInt(data.daysToEarnings, 10);
+  return d >= 0 && d <= tickers.EARNINGS_BLACKOUT_DAYS;
+}
+
+function processOptionsOverlay(poolId, data) {
+  var ema21 = data.levels.find(function (l) { return l.key === tickers.ENTRY_MA_KEY; });
+  if (!ema21 || !ema21.near) return;
+  if (!canAlert(poolId, data.ticker, "options")) return;
+  var optionsMod = require("./options");
+  optionsMod.fetchOptionsOverlay(data.ticker, data.price).then(function (overlay) {
+    if (!optionsMod.isLowIvOverlay(overlay)) return;
+    markAlert(poolId, data.ticker, "options");
+    state.logEvent("OPTIONS", data.ticker + " near 21D with low IV rank (" + overlay.ivRank + ")", poolId);
+    discord.postOptionsOverlay(poolId, data.ticker, data.price, ema21, overlay).catch(function () {});
+  }).catch(function () {});
+}
+
 function processStopLosses(poolId, results) {
   var exits = 0;
 
@@ -131,24 +157,38 @@ function processTicker(poolId, data, livePrices) {
   var entries = 0;
   var alreadyInTicker = paper.hasAnyPosition(poolId, ticker);
   var belowStop = isBelowStopMA(data);
+  var earningsBlocked = isEarningsBlackout(data);
+  var optionsChecked = false;
 
   data.levels.forEach(function (level) {
     if (!level.near || level.value == null) return;
 
-    if (canAlert(poolId, ticker, level.key)) {
-      markAlert(poolId, ticker, level.key);
-      alerts++;
-      state.logEvent("MA_NEAR", ticker + " within " + level.proximity_pct + "% of " + level.label + " ($" + level.value + ")", poolId);
-      discord.postProximityAlert(poolId, ticker, data.price, level).catch(function () {});
+    if (tickers.PROXIMITY_ALERT_KEYS.indexOf(level.key) !== -1) {
+      if (canAlert(poolId, ticker, level.key)) {
+        markAlert(poolId, ticker, level.key);
+        alerts++;
+        state.logEvent("MA_NEAR", ticker + " within " + level.proximity_pct + "% of " + level.label + " ($" + level.value + ")", poolId);
+        discord.postProximityAlert(poolId, ticker, data.price, level).catch(function () {});
+      }
     }
 
+    if (level.key === tickers.ENTRY_MA_KEY && !optionsChecked) {
+      optionsChecked = true;
+      processOptionsOverlay(poolId, data);
+    }
+
+    if (level.key !== tickers.ENTRY_MA_KEY) return;
     if (alreadyInTicker) return;
     if (tickers.isAlertOnly(ticker)) return;
     if (belowStop) return;
+    if (!isAboveStopMA(data)) return;
+    if (earningsBlocked) return;
     if (!paper.hasPosition(poolId, ticker, level.key)) {
       var riskUsd = paper.getPositionSizeUSD(poolId, livePrices);
       var shares = Math.floor(riskUsd / data.price);
-      var trade = paper.buy(poolId, ticker, level.key, level.label, data.price, shares, "MA proximity entry", riskUsd);
+      var reason = "21D proximity · above 55D";
+      if (data.earningsDate) reason += " · earnings " + data.earningsDate;
+      var trade = paper.buy(poolId, ticker, level.key, level.label, data.price, shares, reason, riskUsd);
       if (trade) {
         entries++;
         alreadyInTicker = true;
@@ -310,6 +350,8 @@ module.exports = {
   scheduleScanner: scheduleScanner,
   startupScanForced: startupScanForced,
   isBelowStopMA: isBelowStopMA,
+  isAboveStopMA: isAboveStopMA,
+  isEarningsBlackout: isEarningsBlackout,
   processStopLosses: processStopLosses,
   processTakeProfits: processTakeProfits,
   flattenAllAlertOnlyPositions: flattenAllAlertOnlyPositions

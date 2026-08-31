@@ -103,12 +103,32 @@ function msUntilSundayPremarket(from) {
   return msUntilEtClock("Sun", sundayPremarketHour(), 0, from);
 }
 
+function msUntilNextWeekdayClock(hour, minute, from) {
+  from = from || new Date();
+  hour = parseInt(hour, 10);
+  minute = parseInt(minute, 10);
+  for (var addMs = 60000; addMs <= 8 * 86400000; addMs += 60000) {
+    var t = new Date(from.getTime() + addMs);
+    var p = etParts(t);
+    if (p.weekday === "Sat" || p.weekday === "Sun") continue;
+    if (p.hour === hour && p.minute === minute) return addMs;
+  }
+  return 86400000;
+}
+
+function msUntilFridayClock(hour, minute, from) {
+  return msUntilEtClock("Fri", hour, minute, from);
+}
+
 module.exports = {
   isMarketHours: isMarketHours,
   isAfterBell: isAfterBell,
   isWeekday: isWeekday,
   msUntilAfterBell: msUntilAfterBell,
   msUntilSundayPremarket: msUntilSundayPremarket,
+  msUntilEtClock: msUntilEtClock,
+  msUntilNextWeekdayClock: msUntilNextWeekdayClock,
+  msUntilFridayClock: msUntilFridayClock,
   sundayPremarketHour: sundayPremarketHour,
   sundayPremarketLabel: sundayPremarketLabel,
   formatHourEt: formatHourEt,

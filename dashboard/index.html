@@ -240,6 +240,7 @@ body{
   <nav class="desktop-nav" id="desktop-nav">
     <button class="dtab active" data-p="scanner">Scanner</button>
     <button class="dtab" data-p="watchlist">Watchlist</button>
+    <button class="dtab" data-p="positions">Positions</button>
     <button class="dtab" data-p="strategy">Rules</button>
     <button class="dtab" data-p="log">Log</button>
   </nav>
@@ -268,6 +269,21 @@ body{
       </div>
     </div>
 
+    <div class="page" id="page-positions">
+      <div class="panel">
+        <div class="panel-head"><span class="panel-title">Account</span></div>
+        <div class="panel-body" id="portfolio-summary"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><span class="panel-title">Open positions</span></div>
+        <div class="panel-body"><div class="pos-grid" id="positions-grid"></div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><span class="panel-title">Recent trades</span></div>
+        <div class="panel-body" id="recent-trades"></div>
+      </div>
+    </div>
+
     <div class="page" id="page-strategy">
       <div class="panel">
         <div class="panel-head"><span class="panel-title">Strategy</span></div>
@@ -291,6 +307,7 @@ body{
 <nav class="bottom-nav">
   <button class="nav-btn active" data-p="scanner" onclick="showPage('scanner',this)">Scan</button>
   <button class="nav-btn" data-p="watchlist" onclick="showPage('watchlist',this)">List</button>
+  <button class="nav-btn" data-p="positions" onclick="showPage('positions',this)">Pos</button>
   <button class="nav-btn" data-p="strategy" onclick="showPage('strategy',this)">Rules</button>
   <button class="nav-btn" data-p="log" onclick="showPage('log',this)">Log</button>
 </nav>
@@ -298,6 +315,7 @@ body{
 <script>
 const BASE = window.location.origin;
 let data = null;
+let portfolio = null;
 let activePool = 'main';
 let scanFilter = 'all';
 let expandedTicker = null;
@@ -493,6 +511,42 @@ function renderScanner() {
   }).join('');
 }
 
+function renderPositions() {
+  const sumEl = document.getElementById('portfolio-summary');
+  const grid = document.getElementById('positions-grid');
+  const tradesEl = document.getElementById('recent-trades');
+  if (!portfolio) {
+    sumEl.innerHTML = '<div class="empty-state">Loading portfolio…</div>';
+    grid.innerHTML = '';
+    tradesEl.innerHTML = '';
+    return;
+  }
+  sumEl.innerHTML = `
+    <div class="pos-meta">
+      Equity <span>${fmt(portfolio.equity)}</span> · Cash <span>${fmt(portfolio.cash)}</span><br>
+      Net P&amp;L <span style="color:${portfolio.netPnl >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(portfolio.netPnl)}</span>
+      · Unrealized <span style="color:${portfolio.unrealized >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(portfolio.unrealized)}</span>
+    </div>`;
+  const positions = portfolio.positions || [];
+  if (!positions.length) {
+    grid.innerHTML = '<div class="empty-state">No open positions in this pool</div>';
+  } else {
+    grid.innerHTML = positions.map(p => `
+      <div class="pos-card">
+        <h4>${p.ticker} <span class="badge-pos">${p.shares} sh</span></h4>
+        <div class="pos-meta">
+          Entry <span>${fmt(p.entryPrice)}</span> · Mark <span>${fmt(p.currentPrice)}</span><br>
+          P&amp;L <span style="color:${p.pnl >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(p.pnl)} (${fmtPct(p.pct)})</span>
+        </div>
+      </div>`).join('');
+  }
+  const trades = portfolio.recentTrades || [];
+  tradesEl.innerHTML = trades.length ? trades.slice(0, 15).map(t => {
+    const pnl = t.pnl != null ? ` · ${fmt(t.pnl)}` : '';
+    return `<div class="rule"><strong>${t.type.toUpperCase()} ${t.ticker}</strong> ${t.shares || ''}sh @ ${fmt(t.price)}${pnl}<br><span style="color:var(--dim)">${t.reason || ''}</span></div>`;
+  }).join('') : '<div class="empty-state">No trades yet</div>';
+}
+
 function render() {
   if (!data) return;
 
@@ -515,6 +569,7 @@ function render() {
     : '—';
 
   renderScanner();
+  renderPositions();
 
   document.getElementById('watchlist-toggles').innerHTML = (poolTickers || []).map(t =>
     `<div class="toggle-row">
@@ -525,15 +580,18 @@ function render() {
 
   const s = data.strategy;
   document.getElementById('strategy-body').innerHTML = `
-    <div class="rule"><strong>Dashboard:</strong> Scanner and watchlist only. Paper P&amp;L lives in Discord.</div>
-    <div class="rule"><strong>Data:</strong> ${s.data_source} — scans every 30 min + 4:05 PM ET</div>
     <div class="rule"><strong>Entry:</strong> ${s.entry}</div>
-    <div class="rule"><strong>Sector ETFs:</strong> Watch-only — Discord alerts, no paper trades</div>
+    <div class="rule"><strong>Options overlay:</strong> ${s.options_overlay || '—'}</div>
+    <div class="rule"><strong>Near MA digest:</strong> ${s.near_ma_digest || 'Weekday 12 & 3 PM ET'}</div>
+    <div class="rule"><strong>Weekly journal:</strong> ${s.weekly_journal || 'Friday 4:10 PM ET'}</div>
+    <div class="rule"><strong>Backup:</strong> ${s.backup || 'Daily /data snapshot'}</div>
+    <div class="rule"><strong>Data:</strong> ${s.data_source} — scans every 30 min + 4:05 PM ET</div>
+    <div class="rule"><strong>Sector ETFs:</strong> Watch-only — alerts, no trades</div>
     <div class="rule"><strong>Size:</strong> ${s.sizing || (data.risk_pct + '% equity')}</div>
     <div class="rule"><strong>Stop:</strong> ${s.exit}</div>
     <div class="rule"><strong>Take profit:</strong> ${s.take_profit}</div>
     <div class="rule"><strong>MA levels:</strong> ${s.levels.join(' · ')}</div>
-    <div class="rule"><strong>Discord:</strong> After-the-bell (4:05 PM ET weekdays) + Sunday briefing (3:00 PM ET) — paper summary for each pool</div>`;
+    <div class="rule"><strong>Backtest:</strong> POST /api/backtest?pool=main&amp;days=90 (API key if set)</div>`;
 
   if (s.discord_roles) {
     document.getElementById('discord-roles').innerHTML = `
@@ -551,8 +609,12 @@ function render() {
 
 async function refresh() {
   try {
-    const res = await fetch(BASE + '/api/overview?pool=' + activePool);
-    data = await res.json();
+    const [overviewRes, portfolioRes] = await Promise.all([
+      fetch(BASE + '/api/overview?pool=' + activePool),
+      fetch(BASE + '/api/portfolio?pool=' + activePool)
+    ]);
+    data = await overviewRes.json();
+    portfolio = await portfolioRes.json();
     if (data.activePool) activePool = data.activePool;
     render();
   } catch (e) { toast('Refresh failed'); }
