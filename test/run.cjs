@@ -441,8 +441,72 @@ async function main() {
     assert.strictEqual(JSON.stringify(space).toLowerCase().indexOf("paper") === -1, true);
   });
 
-  console.log("\nindicators");
+  console.log("\nexpansion");
   var indicators = require("../utils/indicators");
+  var journalMod = require("../utils/journal");
+  var backupMod = require("../utils/backup");
+  var optionsMod = require("../utils/options");
+  var backtestMod = require("../utils/backtest");
+
+  await test("journal summarizes weekly closed trades", function () {
+    paper.resetPortfolio("main");
+    paper.buy("main", "AAPL", "d_ema21", "21-Day EMA", 100, 5, "test", 500);
+    paper.sell("main", "AAPL:d_ema21", 110, "test exit");
+    var j = journalMod.weeklyJournal("main");
+    assert.ok(j.summary.sells >= 1);
+    assert.ok(j.closedLines.length >= 1);
+  });
+
+  await test("backup snapshots persist files", function () {
+    paper.resetPortfolio("main");
+    var result = backupMod.runBackup();
+    assert.ok(result.ok);
+    assert.ok(fs.existsSync(result.dest));
+  });
+
+  await test("entry gates: above 55D required, earnings blackout blocks", function () {
+    var scanner = require("../utils/scanner");
+    var above = {
+      price: 110,
+      stopPrice: 105,
+      levels: [{ key: "d_sma55", value: 100 }],
+      daysToEarnings: 2
+    };
+    assert.strictEqual(scanner.isAboveStopMA(above), true);
+    assert.strictEqual(scanner.isEarningsBlackout(above), true);
+    var below = { price: 90, stopPrice: 95, levels: [{ key: "d_sma55", value: 100 }] };
+    assert.strictEqual(scanner.isAboveStopMA(below), false);
+  });
+
+  await test("options IV rank from mock chain", function () {
+    var stats = optionsMod.ivRankFromChain(
+      [{ strike: 100, impliedVolatility: 0.25 }, { strike: 105, impliedVolatility: 0.45 }],
+      [{ strike: 100, impliedVolatility: 0.30 }],
+      100
+    );
+    assert.ok(stats.ivRank >= 0 && stats.ivRank <= 100);
+    assert.ok(stats.iv > 0);
+  });
+
+  await test("backtest simulateTicker on synthetic bars", function () {
+    var bars = [];
+    for (var i = 0; i < 120; i++) {
+      bars.push({ time: i * 86400, close: 100 + Math.sin(i / 10) * 5 });
+    }
+    var weekly = bars.filter(function (_, idx) { return idx % 5 === 0; });
+    var r = backtestMod.simulateTicker("TEST", bars, weekly, 60, 119);
+    assert.strictEqual(r.ticker, "TEST");
+  });
+
+  await test("buildIndicatorsFromBars returns MA levels", function () {
+    var bars = [];
+    for (var i = 0; i < 80; i++) bars.push({ time: i, close: 100 + i * 0.01 });
+    var data = indicators.buildIndicatorsFromBars("TEST", bars, bars, 79, false);
+    assert.ok(data.price > 0);
+    assert.ok(data.levels.length >= 5);
+  });
+
+  console.log("\nindicators");
 
   await test("SPY has price, stopPrice, and MA levels", async function () {
     var r = await indicators.fetchTickerIndicators("SPY", null, false);

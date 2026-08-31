@@ -116,6 +116,10 @@ var RISK_PCT = parseFloat(process.env.RISK_PCT || "2") / 100; // 2% of equity pe
 var TRADE_SIZE = parseFloat(process.env.TRADE_SIZE_USD || "0"); // 0 = use risk % only
 var STARTING_BALANCE = parseFloat(process.env.PAPER_BALANCE || "50000");
 var STOP_MA_KEY = "d_sma55"; // stop loss: daily close below 55 SMA
+var ENTRY_MA_KEY = "d_ema21"; // scanner entries only on 21-Day EMA proximity
+var PROXIMITY_ALERT_KEYS = ["d_ema21", "d_sma55"];
+var EARNINGS_BLACKOUT_DAYS = parseInt(process.env.EARNINGS_BLACKOUT_DAYS || "5", 10);
+var OPTIONS_IV_RANK_MAX = parseFloat(process.env.OPTIONS_IV_RANK_MAX || "35");
 
 // Take profit tiers: at gain % → sell % of original shares (last tier sells all remaining)
 var TAKE_PROFIT_TIERS = [
@@ -144,6 +148,10 @@ module.exports = {
   TRADE_SIZE: TRADE_SIZE,
   STARTING_BALANCE: STARTING_BALANCE,
   STOP_MA_KEY: STOP_MA_KEY,
+  ENTRY_MA_KEY: ENTRY_MA_KEY,
+  PROXIMITY_ALERT_KEYS: PROXIMITY_ALERT_KEYS,
+  EARNINGS_BLACKOUT_DAYS: EARNINGS_BLACKOUT_DAYS,
+  OPTIONS_IV_RANK_MAX: OPTIONS_IV_RANK_MAX,
   TAKE_PROFIT_TIERS: TAKE_PROFIT_TIERS,
   SECTOR_SPDR: SECTOR_SPDR
 };

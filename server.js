@@ -11,6 +11,9 @@ const pools = require("./utils/pools");
 const paths = require("./utils/paths");
 const scanner = require("./utils/scanner");
 const discord = require("./utils/discord");
+const backup = require("./utils/backup");
+const journal = require("./utils/journal");
+const backtest = require("./utils/backtest");
 
 process.on("unhandledRejection", (err) => {
   console.error("[UNHANDLED_REJECTION]", err && err.message ? err.message : err);
@@ -116,11 +119,15 @@ app.get("/api/overview", async (req, res) => {
       risk_pct: tickers.RISK_PCT * 100,
       strategy: {
         data_source: "Yahoo Finance",
-        entry: "Paper buy when price within " + (tickers.PROXIMITY_PCT * 100) + "% of any monitored MA (one position per ticker per pool). No entry when daily close is below 55-Day SMA. Sector SPDRs (XLC–XLU) are watch-only — Discord alerts, no paper trades.",
+        entry: "Buy when price within " + (tickers.PROXIMITY_PCT * 100) + "% of 21-Day EMA while live price is above 55-Day SMA. Blocked " + tickers.EARNINGS_BLACKOUT_DAYS + " days around earnings. Sector SPDRs are watch-only.",
         sizing: (tickers.RISK_PCT * 100) + "% of equity per entry",
         exit: "Stop loss when daily close is below 55-Day SMA",
         take_profit: tickers.TAKE_PROFIT_TIERS.map(function (t) { return t.label; }).join(" → "),
         levels: tickers.MA_LEVELS.map(function (l) { return l.label; }),
+        options_overlay: "Near 21D + IV rank ≤ " + tickers.OPTIONS_IV_RANK_MAX + "% (Yahoo options chain)",
+        near_ma_digest: "Weekday digests at " + (process.env.NEAR_MA_DIGEST_HOURS || "12,15") + ":00 ET",
+        weekly_journal: "Friday 4:10 PM ET closed-trade rollup",
+        backup: "Daily snapshot of /data to backups/ (keep " + (process.env.BACKUP_KEEP || "14") + ")",
         account: pools.getAllPools().map(function (p) {
           return p.shortLabel;
         }).join(" + "),
@@ -130,10 +137,68 @@ app.get("/api/overview", async (req, res) => {
           DISCORD_ROLE_TAKEPROFIT: "Ping on take-profit sells (e.g. @Profits)",
           DISCORD_ROLE_PROXIMITY: "Ping on MA proximity alerts (e.g. @Alerts)",
           DISCORD_ROLE_DAILY: "Ping on after-the-bell P&L and Sunday 3:00 PM ET briefing (e.g. @Daily)",
+          DISCORD_ROLE_WEEKLY: "Ping on Friday weekly trade journal",
+          DISCORD_ROLE_OPTIONS: "Ping on low-IV options overlay near 21D",
           DISCORD_ROLE_ALERTS: "Fallback ping for all alert types"
         }
       }
     });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/api/portfolio", (req, res) => {
+  try {
+    var poolId = parsePoolId(req.query.pool);
+    if (!poolId) return res.status(400).json({ error: "Invalid pool" });
+    var livePrices = discord.livePricesFromState()[poolId] || {};
+    var p = paper.getPortfolio(poolId);
+    var unreal = paper.getUnrealizedPnL(poolId, livePrices);
+    var equity = paper.getEquity(poolId, livePrices);
+    res.json({
+      poolId: poolId,
+      poolLabel: pools.getPool(poolId).shortLabel,
+      cash: p.cash,
+      equity: equity,
+      startingBalance: p.startingBalance,
+      netPnl: equity - p.startingBalance,
+      unrealized: unreal.total,
+      positions: unreal.details,
+      pnl: paper.getPnlSummary(poolId),
+      recentTrades: (p.trades || []).slice(0, 30)
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/api/journal", (req, res) => {
+  try {
+    var poolId = parsePoolId(req.query.pool);
+    if (poolId) {
+      return res.json(journal.weeklyJournal(poolId));
+    }
+    res.json({ pools: journal.allPoolsWeeklyJournal() });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/api/backtest", requireAuth, async (req, res) => {
+  try {
+    var poolId = parsePoolId((req.query && req.query.pool) || (req.body && req.body.pool) || "main");
+    if (!poolId) return res.status(400).json({ error: "Invalid pool" });
+    var days = parseInt((req.query && req.query.days) || (req.body && req.body.days) || process.env.BACKTEST_DAYS || "90", 10);
+    res.json(await backtest.runBacktest({ poolId: poolId, days: days }));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/api/backup", requireAuth, (req, res) => {
+  try {
+    res.json(backup.runBackup());
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -220,4 +285,7 @@ app.listen(PORT, () => {
   scanner.scheduleScanner();
   discord.scheduleDailySummary();
   discord.scheduleSundayPremarket();
+  discord.scheduleWeeklyJournal();
+  discord.scheduleNearMaDigest();
+  backup.scheduleBackups();
 });

@@ -42,6 +42,7 @@ function dataPath(filename) {
 module.exports = {
   DATA_DIR: DATA_DIR,
   EPHEMERAL_DIR: EPHEMERAL_DIR,
+  PERSIST_FILES: PERSIST_FILES,
   dataPath: dataPath,
   ensureDataDir: ensureDataDir,
   migrateFromEphemeralDir: migrateFromEphemeralDir

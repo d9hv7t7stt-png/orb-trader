@@ -76,7 +76,9 @@ function rolePing(type) {
     stop: process.env.DISCORD_ROLE_STOPS,
     proximity: process.env.DISCORD_ROLE_PROXIMITY,
     daily: process.env.DISCORD_ROLE_DAILY,
-    profit: process.env.DISCORD_ROLE_TAKEPROFIT
+    profit: process.env.DISCORD_ROLE_TAKEPROFIT,
+    weekly: process.env.DISCORD_ROLE_WEEKLY,
+    options: process.env.DISCORD_ROLE_OPTIONS
   };
   var id = map[type] || process.env.DISCORD_ROLE_ALERTS;
   if (!id) return null;
@@ -237,6 +239,102 @@ function scheduleSundayPremarket() {
   }
   scheduleNext();
   console.log("[DISCORD] Sunday premarket scheduled (" + marketHours.sundayPremarketLabel() + " — week-ahead per pool)");
+}
+
+function scheduleWeeklyJournal() {
+  async function runWeekly() {
+    var journalMod = require("./journal");
+    var journals = journalMod.allPoolsWeeklyJournal();
+    await postWeeklyJournal(journals);
+  }
+  function scheduleNext() {
+    setTimeout(async function () {
+      await runWeekly();
+      scheduleNext();
+    }, marketHours.msUntilFridayClock(16, 10));
+  }
+  scheduleNext();
+  console.log("[DISCORD] Weekly trade journal scheduled (Fri 4:10 PM ET)");
+}
+
+function scheduleNearMaDigest() {
+  var hours = (process.env.NEAR_MA_DIGEST_HOURS || "12,15").split(",").map(function (h) {
+    return parseInt(h.trim(), 10);
+  }).filter(function (h) { return !isNaN(h) && h >= 0 && h <= 23; });
+
+  function scheduleSlot(hour) {
+    async function runDigest() {
+      var scannerMod = require("./scanner");
+      await scannerMod.runScan(true, { quotesOnly: true });
+      await postNearMaDigest();
+    }
+    function scheduleNext() {
+      setTimeout(async function () {
+        await runDigest();
+        scheduleNext();
+      }, marketHours.msUntilNextWeekdayClock(hour, 0));
+    }
+    scheduleNext();
+  }
+
+  hours.forEach(scheduleSlot);
+  console.log("[DISCORD] Near MA digest scheduled weekdays at " + hours.map(function (h) {
+    return marketHours.formatHourEt(h);
+  }).join(", "));
+}
+
+async function postWeeklyJournal(journals) {
+  var journalMod = require("./journal");
+  journals = journals || journalMod.allPoolsWeeklyJournal();
+  var body = journalMod.formatWeeklyJournalText(journals);
+  await sendDiscord({ embeds: [{
+    color: 0x4da6ff,
+    title: "📒 WEEKLY TRADE JOURNAL",
+    description: body.slice(0, 4000),
+    footer: { text: "Argus · Closed trades last 7 days · Main + Space DC" },
+    timestamp: new Date().toISOString()
+  }] }, "weekly");
+}
+
+async function postNearMaDigest() {
+  var stateMod = require("./state");
+  var tickersMod = require("./tickers");
+  var lines = [];
+  pools.getAllPools().forEach(function (pool) {
+    var s = stateMod.getState(pool.id);
+    Object.values(s.scanResults || {}).forEach(function (r) {
+      if (!r || !r.levels) return;
+      r.levels.forEach(function (l) {
+        if (!l.near || tickersMod.PROXIMITY_ALERT_KEYS.indexOf(l.key) === -1) return;
+        lines.push(poolTag(pool.id) + "**" + r.ticker + "** · " + l.label + " · $" + r.price.toFixed(2) + " · " + l.proximity_pct + "% away");
+      });
+    });
+  });
+  if (!lines.length) return;
+  await sendDiscord({ embeds: [{
+    color: 0x4da6ff,
+    title: "📋 NEAR MA — Intraday digest",
+    description: lines.slice(0, 40).join("\n"),
+    footer: { text: "Argus · 21D + 55D within proximity band" },
+    timestamp: new Date().toISOString()
+  }] }, "proximity");
+}
+
+async function postOptionsOverlay(poolId, ticker, price, ema21, overlay) {
+  await sendDiscord({ embeds: [{
+    color: 0xf5a623,
+    title: poolTag(poolId) + "📊 OPTIONS — " + ticker + " near 21D · low IV",
+    description: ticker + " is near **21-Day EMA** with favorable implied volatility.",
+    fields: [
+      { name: "Price", value: "$" + price.toFixed(2), inline: true },
+      { name: "21D EMA", value: "$" + ema21.value.toFixed(2), inline: true },
+      { name: "IV", value: overlay.iv + "%", inline: true },
+      { name: "IV Rank", value: overlay.ivRank + "%", inline: true },
+      { name: "Expiry", value: overlay.expiry || "—", inline: true }
+    ],
+    footer: { text: accountFooter(poolId) + " · IV rank ≤ " + require("./tickers").OPTIONS_IV_RANK_MAX + "%" },
+    timestamp: new Date().toISOString()
+  }] }, "options");
 }
 
 async function postProximityAlert(poolId, ticker, price, level) {
@@ -459,7 +557,12 @@ async function postSundayPremarket(livePricesByPool) {
 module.exports = {
   scheduleDailySummary: scheduleDailySummary,
   scheduleSundayPremarket: scheduleSundayPremarket,
+  scheduleWeeklyJournal: scheduleWeeklyJournal,
+  scheduleNearMaDigest: scheduleNearMaDigest,
   postProximityAlert: postProximityAlert,
+  postOptionsOverlay: postOptionsOverlay,
+  postWeeklyJournal: postWeeklyJournal,
+  postNearMaDigest: postNearMaDigest,
   postStockEntry: postStockEntry,
   postStockExit: postStockExit,
   postTakeProfit: postTakeProfit,

@@ -26,44 +26,96 @@ function yahooChart(symbol, interval, range) {
   return new Promise(function (resolve) {
     var path = "/v8/finance/chart/" + encodeURIComponent(symbol)
       + "?interval=" + interval + "&range=" + range;
-    var options = {
-      hostname: "query1.finance.yahoo.com",
-      path: path,
-      headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0" }
-    };
-    var req = https.request(options, function (r) {
-      var raw = "";
-      r.on("data", function (c) { raw += c; });
-      r.on("end", function () {
-        try {
-          if (r.statusCode && r.statusCode >= 400) return resolve(null);
-          var parsed = JSON.parse(raw);
-          var result = parsed.chart && parsed.chart.result && parsed.chart.result[0];
-          if (!result) return resolve(null);
-          var quotes = result.indicators && result.indicators.quote && result.indicators.quote[0];
-          var closes = (quotes && quotes.close) || [];
-          var timestamps = result.timestamp || [];
-          var meta = result.meta || {};
-          var bars = [];
-          for (var i = 0; i < closes.length; i++) {
-            if (closes[i] != null) {
-              bars.push({ time: timestamps[i], close: closes[i] });
-            }
-          }
-          resolve({
-            bars: bars,
-            price: meta.regularMarketPrice || meta.previousClose || (bars.length ? bars[bars.length - 1].close : null),
-            symbol: symbol
-          });
-        } catch (e) {
-          resolve(null);
-        }
-      });
-    });
-    req.on("error", function () { resolve(null); });
-    req.setTimeout(15000, function () { req.destroy(); resolve(null); });
-    req.end();
+    requestChart(path, resolve);
   });
+}
+
+function yahooChartPeriod(symbol, interval, period1, period2) {
+  return new Promise(function (resolve) {
+    var path = "/v8/finance/chart/" + encodeURIComponent(symbol)
+      + "?interval=" + interval + "&period1=" + period1 + "&period2=" + period2;
+    requestChart(path, resolve);
+  });
+}
+
+function requestChart(path, resolve) {
+  var options = {
+    hostname: "query1.finance.yahoo.com",
+    path: path,
+    headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0" }
+  };
+  var req = https.request(options, function (r) {
+    var raw = "";
+    r.on("data", function (c) { raw += c; });
+    r.on("end", function () {
+      try {
+        if (r.statusCode && r.statusCode >= 400) return resolve(null);
+        var parsed = JSON.parse(raw);
+        var result = parsed.chart && parsed.chart.result && parsed.chart.result[0];
+        if (!result) return resolve(null);
+        resolve(parseChartResult(result));
+      } catch (e) {
+        resolve(null);
+      }
+    });
+  });
+  req.on("error", function () { resolve(null); });
+  req.setTimeout(15000, function () { req.destroy(); resolve(null); });
+  req.end();
+}
+
+function parseChartResult(result) {
+  var quotes = result.indicators && result.indicators.quote && result.indicators.quote[0];
+  var closes = (quotes && quotes.close) || [];
+  var timestamps = result.timestamp || [];
+  var meta = result.meta || {};
+  var bars = [];
+  for (var i = 0; i < closes.length; i++) {
+    if (closes[i] != null) {
+      bars.push({ time: timestamps[i], close: closes[i] });
+    }
+  }
+  return {
+    bars: bars,
+    price: meta.regularMarketPrice || meta.previousClose || (bars.length ? bars[bars.length - 1].close : null),
+    symbol: meta.symbol || result.meta && result.meta.symbol
+  };
+}
+
+function buildIndicatorsFromBars(displayTicker, dailyBars, weeklyBars, endIndex, marketOpen) {
+  endIndex = endIndex == null ? dailyBars.length - 1 : endIndex;
+  if (endIndex < 0 || endIndex >= dailyBars.length) return null;
+
+  var slice = dailyBars.slice(0, endIndex + 1);
+  var dailyCloses = slice.map(function (b) { return b.close; });
+  var price = dailyCloses[dailyCloses.length - 1];
+  var lastTs = slice[slice.length - 1].time;
+  var weeklyCloses = (weeklyBars || []).filter(function (b) { return b.time <= lastTs; })
+    .map(function (b) { return b.close; });
+  var stopPrice = completedDailyClose(slice, marketOpen);
+
+  var levels = tickers.MA_LEVELS.map(function (level) {
+    var closes = level.timeframe === "weekly" ? weeklyCloses : dailyCloses;
+    var ma = computeMA(closes, level);
+    var prox = proximityPct(price, ma);
+    var near = isNearMA(price, ma, tickers.PROXIMITY_PCT);
+    return {
+      key: level.key,
+      label: level.label,
+      timeframe: level.timeframe,
+      value: ma ? parseFloat(ma.toFixed(4)) : null,
+      proximity_pct: prox != null ? parseFloat((prox * 100).toFixed(3)) : null,
+      near: near,
+      distance: ma ? parseFloat((price - ma).toFixed(4)) : null
+    };
+  });
+
+  return {
+    ticker: displayTicker,
+    price: parseFloat(price.toFixed(4)),
+    stopPrice: stopPrice != null ? parseFloat(stopPrice.toFixed(4)) : null,
+    levels: levels
+  };
 }
 
 function sma(values, period) {
@@ -147,6 +199,14 @@ async function fetchTickerIndicators(displayTicker, resolveYahoo, marketOpen) {
     levels: levels,
     updated: new Date().toISOString()
   };
+
+  try {
+    var earningsMod = require("./earnings");
+    var earn = await earningsMod.fetchEarningsInfo(displayTicker);
+    result.earningsDate = earn.earningsDate;
+    result.daysToEarnings = earn.daysToEarnings;
+  } catch (e) {}
+
   cacheSet(displayTicker, result);
   return result;
 }
@@ -178,8 +238,10 @@ async function fetchAllIndicators(tickerList, resolveYahoo, marketOpen) {
 module.exports = {
   fetchTickerIndicators: fetchTickerIndicators,
   fetchAllIndicators: fetchAllIndicators,
+  buildIndicatorsFromBars: buildIndicatorsFromBars,
   isNearMA: isNearMA,
   proximityPct: proximityPct,
   clearCache: clearCache,
-  yahooChart: yahooChart
+  yahooChart: yahooChart,
+  yahooChartPeriod: yahooChartPeriod
 };
