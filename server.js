@@ -15,6 +15,7 @@ const backup = require("./utils/backup");
 const journal = require("./utils/journal");
 const backtest = require("./utils/backtest");
 const optionsMod = require("./utils/options");
+const marketHours = require("./utils/marketHours");
 
 process.on("unhandledRejection", (err) => {
   console.error("[UNHANDLED_REJECTION]", err && err.message ? err.message : err);
@@ -120,8 +121,12 @@ app.get("/api/overview", async (req, res) => {
       risk_pct: tickers.RISK_PCT * 100,
       strategy: {
         data_source: "Yahoo Finance",
-        entry: "Buy when price within " + (tickers.PROXIMITY_PCT * 100) + "% of 21-Day EMA while live price is above 55-Day SMA. Blocked " + tickers.EARNINGS_BLACKOUT_DAYS + " days around earnings. Sector SPDRs are watch-only.",
-        sizing: (tickers.RISK_PCT * 100) + "% of equity per entry",
+        entry: "Buy when price within " + (tickers.PROXIMITY_PCT * 100) + "% of 21-Day EMA while above 55D and SPY/QQQ above 200D. RS top " + (process.env.RS_MIN_PERCENTILE || "50") + "% only. Setup score ≥ " + (process.env.SETUP_SCORE_MIN || "55") + ". Entries after " + (process.env.OPEN_CONFIRM_MIN || "45") + " min from open.",
+        sizing: (tickers.RISK_PCT * 100) + "% of equity per entry (VIX-adjusted)",
+        regime: "SPY + QQQ must be above 200-Day SMA for new entries",
+        vix: "VIX bottom " + (process.env.VIX_BOTTOM || "12.12") + " · danger levels " + (process.env.VIX_DANGER_LEVELS || "15.04,16.83,20,21.51,30,36.11,50"),
+        theme_cap: "Max " + (process.env.MAX_POSITIONS_PER_THEME || "2") + " open positions per theme",
+        sector_rank: "Daily sector RS rank ~9:35 AM ET · weekly Sun + Fri",
         exit: "Stop loss when daily close is below 55-Day SMA",
         take_profit: tickers.TAKE_PROFIT_TIERS.map(function (t) { return t.label; }).join(" → "),
         levels: tickers.MA_LEVELS.map(function (l) { return l.label; }),
@@ -168,6 +173,27 @@ app.get("/api/portfolio", (req, res) => {
       positions: unreal.details,
       pnl: paper.getPnlSummary(poolId),
       recentTrades: (p.trades || []).slice(0, 30)
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/api/market-context", async (req, res) => {
+  try {
+    var vixMod = require("./utils/vix");
+    var sectorsMod = require("./utils/sectors");
+    var alphaMod = require("./utils/alpha");
+    var ctx = scanner.getLastScanContext();
+    var vix = ctx && ctx.vix ? ctx.vix : await vixMod.fetchVix();
+    var sectors = await sectorsMod.fetchSectorRanks();
+    res.json({
+      vix: vix,
+      regimeBullish: ctx ? ctx.regimeBullish : null,
+      entryWindowOpen: ctx ? ctx.entryWindowOpen : marketHours.isEntryWindowOpen(),
+      sectors: sectors,
+      rsRanks: ctx ? ctx.rsRanks : null,
+      setupScoreMin: alphaMod.SETUP_SCORE_MIN
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -350,5 +376,7 @@ app.listen(PORT, () => {
   discord.scheduleSundayPremarket();
   discord.scheduleWeeklyJournal();
   discord.scheduleNearMaDigest();
+  discord.scheduleSectorRankDaily();
+  discord.scheduleSectorRankWeekly();
   backup.scheduleBackups();
 });

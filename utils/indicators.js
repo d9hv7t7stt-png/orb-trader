@@ -197,7 +197,8 @@ async function fetchTickerIndicators(displayTicker, resolveYahoo, marketOpen) {
     price: parseFloat(price.toFixed(4)),
     stopPrice: stopPrice != null ? parseFloat(stopPrice.toFixed(4)) : null,
     levels: levels,
-    updated: new Date().toISOString()
+    updated: new Date().toISOString(),
+    _closes: dailyCloses.slice(-65)
   };
 
   try {

@@ -54,6 +54,27 @@ function isAfterBell(date) {
   return etMinutes(date) >= 16 * 60 + 5;
 }
 
+function openConfirmMinutes() {
+  var m = parseInt(process.env.OPEN_CONFIRM_MIN || "45", 10);
+  if (isNaN(m) || m < 0) return 45;
+  if (m > 120) return 120;
+  return m;
+}
+
+function isEntryWindowOpen(date) {
+  date = date || new Date();
+  if (!isWeekday(date)) return false;
+  var mins = etMinutes(date);
+  var start = 9 * 60 + 30 + openConfirmMinutes();
+  return mins >= start && mins < 16 * 60;
+}
+
+function canProcessTradeLogic(marketOpen, opts) {
+  if (opts && opts.quotesOnly) return false;
+  if (marketOpen) return true;
+  return isAfterBell();
+}
+
 function msUntilEtClock(weekday, hour, minute, from) {
   from = from || new Date();
   hour = parseInt(hour, 10);
@@ -133,5 +154,8 @@ module.exports = {
   sundayPremarketLabel: sundayPremarketLabel,
   formatHourEt: formatHourEt,
   etDateKey: etDateKey,
-  etParts: etParts
+  etParts: etParts,
+  openConfirmMinutes: openConfirmMinutes,
+  isEntryWindowOpen: isEntryWindowOpen,
+  canProcessTradeLogic: canProcessTradeLogic
 };

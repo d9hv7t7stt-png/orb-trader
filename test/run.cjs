@@ -121,8 +121,14 @@ async function main() {
   console.log("\nscanner");
   var scanner = require("../utils/scanner");
 
-  await test("startupScanForced mirrors isMarketHours", function () {
-    assert.strictEqual(scanner.startupScanForced(), marketHours.isMarketHours());
+  await test("startupScanForced is false outside forced deploy scans", function () {
+    assert.strictEqual(scanner.startupScanForced(), false);
+  });
+
+  await test("canProcessTradeLogic skips pre-market unless after bell", function () {
+    assert.strictEqual(marketHours.canProcessTradeLogic(false, {}), marketHours.isAfterBell());
+    assert.strictEqual(marketHours.canProcessTradeLogic(true, {}), true);
+    assert.strictEqual(marketHours.canProcessTradeLogic(false, { quotesOnly: true }), false);
   });
 
   await test("runScan(false) skips outside market hours", function () {
@@ -504,6 +510,75 @@ async function main() {
     var data = indicators.buildIndicatorsFromBars("TEST", bars, bars, 79, false);
     assert.ok(data.price > 0);
     assert.ok(data.levels.length >= 5);
+  });
+
+  console.log("\nalpha");
+
+  var alphaMod = require("../utils/alpha");
+  var vixMod = require("../utils/vix");
+  var sectorsMod = require("../utils/sectors");
+  var themesMod = require("../utils/themes");
+
+  await test("VIX danger zones scale risk", function () {
+    var calm = vixMod.zoneForVix(12);
+    assert.strictEqual(calm.riskMult, 1);
+    var high = vixMod.zoneForVix(25);
+    assert.ok(high.riskMult < calm.riskMult);
+    var crisis = vixMod.zoneForVix(55);
+    assert.strictEqual(crisis.blockEntries, true);
+  });
+
+  await test("regime requires SPY and QQQ above 200D", function () {
+    var results = {
+      SPY: { price: 500, levels: [{ key: "d_sma200", value: 400 }] },
+      QQQ: { price: 400, levels: [{ key: "d_sma200", value: 350 }] }
+    };
+    assert.strictEqual(alphaMod.isRegimeBullish(results), true);
+    results.QQQ.price = 300;
+    assert.strictEqual(alphaMod.isRegimeBullish(results), false);
+  });
+
+  await test("setup score ranks near 21D above 55D", function () {
+    var data = {
+      price: 110,
+      levels: [
+        { key: "d_ema21", near: true, value: 108 },
+        { key: "d_sma55", value: 100 },
+        { key: "d_sma200", value: 90 }
+      ]
+    };
+    var setup = alphaMod.computeSetupScore(data, {
+      regimeBullish: true,
+      vix: { blockEntries: false, riskMult: 1, zone: "Calm" },
+      rsInfo: { percentile: 80, rank: 2 },
+      themeOk: true
+    });
+    assert.ok(setup.score >= alphaMod.SETUP_SCORE_MIN);
+    assert.strictEqual(setup.tradeable, true);
+  });
+
+  await test("theme cap blocks more than max per theme", function () {
+    paper.resetPortfolio("main");
+    paper.buy("main", "MU", "d_ema21", "21-Day EMA", 100, 1, "test", 100);
+    paper.buy("main", "SMH", "d_ema21", "21-Day EMA", 100, 1, "test", 100);
+    assert.strictEqual(themesMod.canAddThemePosition("main", "DRAM"), false);
+    assert.strictEqual(themesMod.canAddThemePosition("main", "AAPL"), true);
+  });
+
+  await test("sector rank sorts by week RS", function () {
+    var ranks = {
+      ok: true,
+      sectors: [
+        { ticker: "XLK", weekRs: 2, monthRs: 1, weekRank: 1, monthRank: 1, weekReturn: 3, monthReturn: 5 },
+        { ticker: "XLE", weekRs: -1, monthRs: 0, weekRank: 2, monthRank: 2, weekReturn: 1, monthReturn: 2 }
+      ],
+      leadersWeek: ["XLK"],
+      laggardsWeek: ["XLE"],
+      spyWeekReturn: 1
+    };
+    var text = sectorsMod.formatSectorRankLines(ranks, "week");
+    assert.ok(text.indexOf("XLK") !== -1);
+    assert.ok(text.indexOf("Leading") !== -1);
   });
 
   console.log("\nindicators");

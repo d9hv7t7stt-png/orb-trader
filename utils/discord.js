@@ -283,6 +283,54 @@ function scheduleNearMaDigest() {
   }).join(", "));
 }
 
+function scheduleSectorRankDaily() {
+  var hour = parseInt(process.env.SECTOR_RANK_HOUR || "9", 10);
+  var minute = parseInt(process.env.SECTOR_RANK_MIN || "35", 10);
+
+  async function runDaily() {
+    var sectorsMod = require("./sectors");
+    var vixMod = require("./vix");
+    var ranks = await sectorsMod.fetchSectorRanks();
+    var vix = await vixMod.fetchVix();
+    await postSectorRankDaily(ranks, vix);
+  }
+
+  function scheduleNext() {
+    setTimeout(async function () {
+      await runDaily();
+      scheduleNext();
+    }, marketHours.msUntilNextWeekdayClock(hour, minute));
+  }
+  scheduleNext();
+  console.log("[DISCORD] Sector rank daily scheduled weekdays " + hour + ":" + (minute < 10 ? "0" : "") + minute + " ET");
+}
+
+function scheduleSectorRankWeekly() {
+  async function runWeekly() {
+    var sectorsMod = require("./sectors");
+    var ranks = await sectorsMod.fetchSectorRanks();
+    await postSectorRankWeekly(ranks);
+  }
+
+  function scheduleSunday() {
+    setTimeout(async function () {
+      await runWeekly();
+      scheduleSunday();
+    }, marketHours.msUntilSundayPremarket());
+  }
+
+  function scheduleFriday() {
+    setTimeout(async function () {
+      await runWeekly();
+      scheduleFriday();
+    }, marketHours.msUntilFridayClock(16, 15));
+  }
+
+  scheduleSunday();
+  scheduleFriday();
+  console.log("[DISCORD] Sector rank weekly scheduled Sun premarket + Fri 4:15 PM ET");
+}
+
 async function postWeeklyJournal(journals) {
   var journalMod = require("./journal");
   journals = journals || journalMod.allPoolsWeeklyJournal();
@@ -299,6 +347,9 @@ async function postWeeklyJournal(journals) {
 async function postNearMaDigest() {
   var stateMod = require("./state");
   var tickersMod = require("./tickers");
+  var alphaMod = require("./alpha");
+  var scannerMod = require("./scanner");
+  var ctx = scannerMod.getLastScanContext() || {};
   var lines = [];
   pools.getAllPools().forEach(function (pool) {
     var s = stateMod.getState(pool.id);
@@ -306,18 +357,65 @@ async function postNearMaDigest() {
       if (!r || !r.levels) return;
       r.levels.forEach(function (l) {
         if (!l.near || tickersMod.PROXIMITY_ALERT_KEYS.indexOf(l.key) === -1) return;
-        lines.push(poolTag(pool.id) + "**" + r.ticker + "** · " + l.label + " · $" + r.price.toFixed(2) + " · " + l.proximity_pct + "% away");
+        var rs = ctx.rsRanks && ctx.rsRanks[pool.id] && ctx.rsRanks[pool.id].byTicker
+          ? ctx.rsRanks[pool.id].byTicker[r.ticker]
+          : null;
+        var setup = alphaMod.computeSetupScore(r, {
+          regimeBullish: ctx.regimeBullish,
+          vix: ctx.vix,
+          rsInfo: rs,
+          themeOk: true
+        });
+        lines.push({
+          text: poolTag(pool.id) + "**" + r.ticker + "** · score **" + setup.score + "** · " + l.label + " · $" + r.price.toFixed(2),
+          score: setup.score
+        });
       });
     });
   });
   if (!lines.length) return;
+  lines.sort(function (a, b) { return b.score - a.score; });
   await sendDiscord({ embeds: [{
     color: 0x4da6ff,
-    title: "📋 NEAR MA — Intraday digest",
-    description: lines.slice(0, 40).join("\n"),
-    footer: { text: "Argus · 21D + 55D within proximity band" },
+    title: "📋 NEAR MA — Setup queue",
+    description: lines.slice(0, 25).map(function (l) { return l.text; }).join("\n"),
+    footer: { text: "Argus · Ranked by setup score · min " + alphaMod.SETUP_SCORE_MIN + " to auto-enter" },
     timestamp: new Date().toISOString()
   }] }, "proximity");
+}
+
+async function postSectorRankDaily(ranks, vixData) {
+  var sectorsMod = require("./sectors");
+  var vixMod = require("./vix");
+  ranks = ranks || await sectorsMod.fetchSectorRanks();
+  vixData = vixData || await vixMod.fetchVix();
+  if (!ranks.ok) return;
+  await sendDiscord({ embeds: [{
+    color: 0x00e5a0,
+    title: "📊 SECTOR RANK — Daily",
+    description: sectorsMod.formatSectorRankLines(ranks, "week").slice(0, 4000),
+    fields: [
+      { name: "VIX", value: vixData.vix != null ? vixData.vix + " · " + vixData.zone + " · size ×" + vixData.riskMult : "—", inline: false }
+    ],
+    footer: { text: "Argus · SPDR sectors vs SPY · week RS rank" },
+    timestamp: new Date().toISOString()
+  }] }, "daily");
+}
+
+async function postSectorRankWeekly(ranks) {
+  var sectorsMod = require("./sectors");
+  ranks = ranks || await sectorsMod.fetchSectorRanks();
+  if (!ranks.ok) return;
+  await sendDiscord({ embeds: [{
+    color: 0x4da6ff,
+    title: "📊 SECTOR RANK — Weekly recap",
+    description: (
+      sectorsMod.formatSectorRankLines(ranks, "week") + "\n\n" +
+      sectorsMod.formatSectorRankLines(ranks, "month")
+    ).slice(0, 4000),
+    footer: { text: "Argus · Leading sectors this week & month vs SPY" },
+    timestamp: new Date().toISOString()
+  }] }, "daily");
 }
 
 async function postOptionsOverlay(poolId, ticker, price, ema21, overlay) {
@@ -337,11 +435,12 @@ async function postOptionsOverlay(poolId, ticker, price, ema21, overlay) {
   }] }, "options");
 }
 
-async function postProximityAlert(poolId, ticker, price, level) {
+async function postProximityAlert(poolId, ticker, price, level, setup) {
+  var scoreLine = setup ? "Setup score **" + setup.score + "**" : "";
   await sendDiscord({ embeds: [{
     color: 0x4da6ff,
-    title: poolTag(poolId) + "📍 MA — " + ticker,
-    description: ticker + " is near **" + level.label + "**",
+    title: poolTag(poolId) + "📍 MA — " + ticker + (setup ? " · " + setup.score : ""),
+    description: ticker + " is near **" + level.label + "**" + (scoreLine ? " · " + scoreLine : ""),
     fields: [
       { name: "Price", value: "$" + price.toFixed(2), inline: true },
       { name: level.label, value: "$" + level.value.toFixed(2), inline: true }
@@ -351,17 +450,17 @@ async function postProximityAlert(poolId, ticker, price, level) {
   }] }, "proximity");
 }
 
-async function postStockEntry(poolId, ticker, maLabel, price, shares, total, proximityPct, riskUsd) {
+async function postStockEntry(poolId, ticker, maLabel, price, shares, total, proximityPct, riskUsd, setup) {
   await sendDiscord({ embeds: [{
     color: 0x00e5a0,
-    title: poolTag(poolId) + "📈 STOCK BUY — " + ticker,
+    title: poolTag(poolId) + "📈 STOCK BUY — " + ticker + (setup ? " · score " + setup.score : ""),
     fields: [
       { name: "Trigger", value: formatTriggerLabel(maLabel), inline: true },
       { name: "Shares", value: String(shares), inline: true },
       { name: "Price", value: "$" + price.toFixed(2), inline: true },
       { name: "Cost", value: formatMoney(total), inline: true },
       { name: "Risk Size", value: formatMoney(riskUsd) + " (" + (parseFloat(process.env.RISK_PCT || "2")) + "% equity)", inline: true },
-      { name: "MA", value: formatTriggerLabel(maLabel), inline: true },
+      { name: "Setup", value: setup ? setup.score + " · " + setup.parts.slice(0, 4).join(", ") : "—", inline: false },
     ],
     footer: { text: accountFooter(poolId) },
     timestamp: new Date().toISOString()
@@ -402,10 +501,16 @@ async function postTakeProfit(poolId, ticker, maLabel, tierLabel, exitPrice, sha
 
 async function postStockDailySummary(livePricesByPool) {
   var paperMod = require("./paper");
+  var vixMod = require("./vix");
+  var sectorsMod = require("./sectors");
+  var scannerMod = require("./scanner");
   var riskPct = (parseFloat(process.env.RISK_PCT || "2")).toFixed(0);
   var fields = [];
   var totalNet = 0;
   var totalEquity = 0;
+  var vix = await vixMod.fetchVix();
+  var sectorRanks = await sectorsMod.fetchSectorRanks();
+  var ctx = scannerMod.getLastScanContext() || {};
 
   pools.getAllPools().forEach(function (pool) {
     var livePrices = (livePricesByPool && livePricesByPool[pool.id]) || {};
@@ -458,11 +563,16 @@ async function postStockDailySummary(livePricesByPool) {
   });
 
   var color = totalNet >= 0 ? 0x00e5a0 : 0xff4d6a;
+  var regimeLine = ctx.regimeBullish === false ? "Regime: **risk-off** (SPY/QQQ below 200D)" : "Regime: **bullish** (SPY/QQQ above 200D)";
+  var sectorLine = sectorRanks.leadersWeek && sectorRanks.leadersWeek.length
+    ? "Sectors leading: **" + sectorRanks.leadersWeek.join(", ") + "** · weak: " + sectorRanks.laggardsWeek.join(", ")
+    : "";
 
   await sendDiscord({ embeds: [{
     color: color,
     title: "🔔 AFTER THE BELL — Position summary · " + new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }),
-    description: "One message, both pools. Combined equity " + formatMoney(totalEquity) + " · Combined net P&L " + formatMoney(totalNet),
+    description: "Combined equity " + formatMoney(totalEquity) + " · Combined net P&L " + formatMoney(totalNet) + "\n" +
+      vixMod.formatVixLine(vix) + " · " + regimeLine + (sectorLine ? "\n" + sectorLine : ""),
     fields: fields,
     footer: { text: "Argus · Main + Space DC · Stop: daily close < 55 SMA · TP: +10/+20/+30%" },
     timestamp: new Date().toISOString()
@@ -559,10 +669,14 @@ module.exports = {
   scheduleSundayPremarket: scheduleSundayPremarket,
   scheduleWeeklyJournal: scheduleWeeklyJournal,
   scheduleNearMaDigest: scheduleNearMaDigest,
+  scheduleSectorRankDaily: scheduleSectorRankDaily,
+  scheduleSectorRankWeekly: scheduleSectorRankWeekly,
   postProximityAlert: postProximityAlert,
   postOptionsOverlay: postOptionsOverlay,
   postWeeklyJournal: postWeeklyJournal,
   postNearMaDigest: postNearMaDigest,
+  postSectorRankDaily: postSectorRankDaily,
+  postSectorRankWeekly: postSectorRankWeekly,
   postStockEntry: postStockEntry,
   postStockExit: postStockExit,
   postTakeProfit: postTakeProfit,
