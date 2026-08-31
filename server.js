@@ -14,6 +14,7 @@ const discord = require("./utils/discord");
 const backup = require("./utils/backup");
 const journal = require("./utils/journal");
 const backtest = require("./utils/backtest");
+const optionsMod = require("./utils/options");
 
 process.on("unhandledRejection", (err) => {
   console.error("[UNHANDLED_REJECTION]", err && err.message ? err.message : err);
@@ -180,6 +181,68 @@ app.get("/api/journal", (req, res) => {
       return res.json(journal.weeklyJournal(poolId));
     }
     res.json({ pools: journal.allPoolsWeeklyJournal() });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/api/options", async (req, res) => {
+  try {
+    var poolId = parsePoolId(req.query.pool);
+    if (!poolId) return res.status(400).json({ error: "Invalid pool" });
+    var ivMax = tickers.OPTIONS_IV_RANK_MAX;
+    var single = req.query.ticker ? String(req.query.ticker).toUpperCase() : null;
+    var s = state.getState(poolId);
+    var candidates = [];
+
+    if (single) {
+      var row = s.scanResults && s.scanResults[single];
+      if (!row || !row.price) return res.json({ poolId: poolId, ivRankMax: ivMax, overlays: [] });
+      candidates.push({ ticker: single, price: row.price, ema21: row.levels && row.levels.find(function (l) { return l.key === tickers.ENTRY_MA_KEY; }) });
+    } else {
+      Object.values(s.scanResults || {}).forEach(function (r) {
+        if (!r || !r.price || tickers.isAlertOnly(r.ticker)) return;
+        var ema21 = (r.levels || []).find(function (l) { return l.key === tickers.ENTRY_MA_KEY; });
+        if (!ema21 || !ema21.near) return;
+        candidates.push({ ticker: r.ticker, price: r.price, ema21: ema21 });
+      });
+    }
+
+    var overlays = [];
+    for (var i = 0; i < candidates.length; i++) {
+      var c = candidates[i];
+      try {
+        var overlay = await optionsMod.fetchOptionsOverlay(c.ticker, c.price);
+        if (!overlay) continue;
+        overlays.push({
+          ticker: c.ticker,
+          price: c.price,
+          ema21: c.ema21 && c.ema21.value != null ? c.ema21.value : null,
+          proximityPct: c.ema21 && c.ema21.proximity_pct != null ? c.ema21.proximity_pct : null,
+          iv: overlay.iv,
+          ivRank: overlay.ivRank,
+          expiry: overlay.expiry,
+          lowIv: overlay.lowIv
+        });
+        if (i + 1 < candidates.length) {
+          await new Promise(function (r) { setTimeout(r, 150); });
+        }
+      } catch (e) {
+        /* skip failed ticker */
+      }
+    }
+
+    overlays.sort(function (a, b) {
+      if (a.lowIv !== b.lowIv) return a.lowIv ? -1 : 1;
+      return (a.ivRank || 999) - (b.ivRank || 999);
+    });
+
+    res.json({
+      poolId: poolId,
+      ivRankMax: ivMax,
+      near21D: candidates.length,
+      overlays: overlays
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

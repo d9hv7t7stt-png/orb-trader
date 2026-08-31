@@ -184,6 +184,27 @@ body{
 .log-type.STOP_LOSS{color:var(--red)}
 .log-type.TAKE_PROFIT{color:var(--amber)}
 .log-type.SCAN,.log-type.SCAN_DONE{color:var(--green)}
+.log-type.OPTIONS{color:var(--amber)}
+
+/* Backtest / Options */
+.tool-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+.tool-select{
+  font-family:var(--mono);font-size:11px;background:var(--surface2);color:var(--white);
+  border:1px solid var(--border2);border-radius:8px;padding:8px 10px;
+}
+.result-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11px}
+.result-table th,.result-table td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--border)}
+.result-table th{color:var(--dim);font-size:9px;text-transform:uppercase;letter-spacing:0.08em}
+.result-table tr:last-child td{border-bottom:none}
+.tag-low{color:var(--green);background:rgba(0,229,160,0.12);border:1px solid rgba(0,229,160,0.25);padding:2px 8px;border-radius:12px;font-size:9px;font-weight:700}
+.tag-high{color:var(--dim);background:var(--surface2);border:1px solid var(--border);padding:2px 8px;border-radius:12px;font-size:9px;font-weight:700}
+.options-grid{display:grid;gap:10px}
+@media(min-width:640px){.options-grid{grid-template-columns:1fr 1fr}}
+.option-card{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px}
+.option-card.low-iv{border-color:rgba(0,229,160,0.35);background:rgba(0,229,160,0.06)}
+.option-card h4{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.option-card .iv{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
+.loading{color:var(--dim);font-family:var(--mono);font-size:12px;padding:12px 0}
 
 /* Settings */
 .toggle{width:44px;height:26px;background:var(--surface3);border-radius:13px;border:1px solid var(--border2);position:relative;cursor:pointer;flex-shrink:0}
@@ -241,6 +262,8 @@ body{
     <button class="dtab active" data-p="scanner">Scanner</button>
     <button class="dtab" data-p="watchlist">Watchlist</button>
     <button class="dtab" data-p="positions">Positions</button>
+    <button class="dtab" data-p="backtest">Backtest</button>
+    <button class="dtab" data-p="options">Options</button>
     <button class="dtab" data-p="strategy">Rules</button>
     <button class="dtab" data-p="log">Log</button>
   </nav>
@@ -284,6 +307,38 @@ body{
       </div>
     </div>
 
+    <div class="page" id="page-backtest">
+      <div class="panel">
+        <div class="panel-head"><span class="panel-title">Backtest mode</span></div>
+        <div class="panel-body">
+          <div class="rule">Replay <strong>21D proximity + above 55D</strong> entries, 55D stop, +30% take profit on Yahoo historical bars.</div>
+          <div class="tool-bar">
+            <select class="tool-select" id="backtest-days">
+              <option value="30">30 days</option>
+              <option value="60">60 days</option>
+              <option value="90" selected>90 days</option>
+              <option value="180">180 days</option>
+            </select>
+            <button class="btn primary" onclick="runBacktest()">Run backtest</button>
+          </div>
+          <div id="backtest-results"><div class="empty-state">Select days and run — uses current pool tickers (excludes sector watch-only)</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="page" id="page-options">
+      <div class="panel">
+        <div class="panel-head">
+          <span class="panel-title">Options overlay</span>
+          <button class="btn" onclick="loadOptions()">Refresh IV</button>
+        </div>
+        <div class="panel-body">
+          <div class="rule">Shows IV rank for names <strong>near 21D</strong>. Low IV (≤ threshold) matches Discord options overlay alerts.</div>
+          <div id="options-results"><div class="empty-state">Open this tab after a scan to load near-21D options data</div></div>
+        </div>
+      </div>
+    </div>
+
     <div class="page" id="page-strategy">
       <div class="panel">
         <div class="panel-head"><span class="panel-title">Strategy</span></div>
@@ -308,6 +363,8 @@ body{
   <button class="nav-btn active" data-p="scanner" onclick="showPage('scanner',this)">Scan</button>
   <button class="nav-btn" data-p="watchlist" onclick="showPage('watchlist',this)">List</button>
   <button class="nav-btn" data-p="positions" onclick="showPage('positions',this)">Pos</button>
+  <button class="nav-btn" data-p="backtest" onclick="showPage('backtest',this)">Test</button>
+  <button class="nav-btn" data-p="options" onclick="showPage('options',this)">Opt</button>
   <button class="nav-btn" data-p="strategy" onclick="showPage('strategy',this)">Rules</button>
   <button class="nav-btn" data-p="log" onclick="showPage('log',this)">Log</button>
 </nav>
@@ -316,6 +373,8 @@ body{
 const BASE = window.location.origin;
 let data = null;
 let portfolio = null;
+let backtestData = null;
+let optionsData = null;
 let activePool = 'main';
 let scanFilter = 'all';
 let expandedTicker = null;
@@ -344,6 +403,8 @@ async function apiFetch(url, opts = {}) {
 
 function setActivePool(poolId) {
   activePool = poolId;
+  backtestData = null;
+  optionsData = null;
   document.querySelectorAll('.pool-tab').forEach(el => {
     el.classList.toggle('active', el.dataset.pool === poolId);
   });
@@ -363,6 +424,8 @@ function showPage(p, btn) {
   document.querySelectorAll('.nav-btn,.dtab').forEach(el => el.classList.remove('active'));
   document.getElementById('page-' + p).classList.add('active');
   document.querySelectorAll('[data-p="'+p+'"]').forEach(el => el.classList.add('active'));
+  if (p === 'options') loadOptions();
+  if (p === 'backtest' && backtestData) renderBacktest();
 }
 
 document.querySelectorAll('.dtab').forEach(b => b.addEventListener('click', () => showPage(b.dataset.p, b)));
@@ -511,6 +574,108 @@ function renderScanner() {
   }).join('');
 }
 
+function renderBacktest() {
+  const el = document.getElementById('backtest-results');
+  if (!backtestData) {
+    el.innerHTML = '<div class="empty-state">Select days and run — uses current pool tickers (excludes sector watch-only)</div>';
+    return;
+  }
+  if (!backtestData.ok) {
+    el.innerHTML = `<div class="empty-state" style="color:var(--red)">${backtestData.error || 'Backtest failed'}</div>`;
+    return;
+  }
+  const s = backtestData.summary || {};
+  const winRate = s.closedTrades ? ((s.wins / s.closedTrades) * 100).toFixed(0) : '—';
+  el.innerHTML = `
+    <div class="pos-meta" style="margin-bottom:12px">
+      ${backtestData.days}d · ${backtestData.tickers} tickers · Realized <span style="color:${s.realized >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(s.realized)}</span>
+      · Closed <span>${s.closedTrades || 0}</span> · W/L <span>${s.wins || 0}/${s.losses || 0}</span> · Win rate <span>${winRate}%</span>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="result-table">
+        <thead><tr><th>Ticker</th><th>Realized</th><th>Closed</th><th>W/L</th><th>Trades</th></tr></thead>
+        <tbody>
+          ${(backtestData.results || []).map(r => `
+            <tr>
+              <td><strong>${r.ticker}</strong></td>
+              <td style="color:${r.realized >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(r.realized)}</td>
+              <td>${r.closed}</td>
+              <td>${r.wins}/${r.losses}</td>
+              <td>${r.trades}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    ${(backtestData.errors || []).length ? `<div class="rule" style="margin-top:12px;color:var(--dim)">Skipped: ${backtestData.errors.map(e => e.ticker).join(', ')}</div>` : ''}`;
+}
+
+function renderOptions() {
+  const el = document.getElementById('options-results');
+  if (!optionsData) {
+    el.innerHTML = '<div class="empty-state">Open this tab after a scan to load near-21D options data</div>';
+    return;
+  }
+  const overlays = optionsData.overlays || [];
+  if (!overlays.length) {
+    el.innerHTML = `<div class="empty-state">No near-21D tickers with options data (${optionsData.near21D || 0} near 21D scanned)</div>`;
+    return;
+  }
+  el.innerHTML = `
+    <div class="pos-meta" style="margin-bottom:12px">
+      IV rank threshold <span>≤ ${optionsData.ivRankMax}%</span> · Near 21D <span>${optionsData.near21D}</span> · Loaded <span>${overlays.length}</span>
+    </div>
+    <div class="options-grid">
+      ${overlays.map(o => `
+        <div class="option-card ${o.lowIv ? 'low-iv' : ''}">
+          <h4><span>${o.ticker}</span> ${o.lowIv ? '<span class="tag-low">LOW IV</span>' : '<span class="tag-high">IV OK</span>'}</h4>
+          <div class="pos-meta">
+            Price <span>${fmt(o.price)}</span> · 21D <span>${o.ema21 != null ? '$' + o.ema21.toFixed(2) : '—'}</span><br>
+            IV <span class="iv" style="color:${o.lowIv ? 'var(--green)' : 'var(--white)'}">${o.iv}%</span>
+            · Rank <span>${o.ivRank}%</span> · Exp <span>${o.expiry || '—'}</span>
+          </div>
+        </div>`).join('')}
+    </div>`;
+}
+
+async function runBacktest() {
+  const days = document.getElementById('backtest-days').value;
+  const el = document.getElementById('backtest-results');
+  el.innerHTML = '<div class="loading">Running backtest on Yahoo bars… (may take ~30s)</div>';
+  toast('Backtest running…');
+  try {
+    const res = await apiFetch(BASE + '/api/backtest?pool=' + activePool + '&days=' + days, { method: 'POST' });
+    backtestData = await res.json();
+    renderBacktest();
+    toast(backtestData.ok ? 'Backtest done' : 'Backtest failed');
+  } catch (e) {
+    backtestData = { ok: false, error: 'Request failed' };
+    renderBacktest();
+    toast('Backtest failed');
+  }
+}
+
+async function loadOptions() {
+  const el = document.getElementById('options-results');
+  el.innerHTML = '<div class="loading">Fetching options chains…</div>';
+  try {
+    const res = await fetch(BASE + '/api/options?pool=' + activePool);
+    optionsData = await res.json();
+    renderOptions();
+  } catch (e) {
+    optionsData = null;
+    el.innerHTML = '<div class="empty-state">Options load failed</div>';
+  }
+}
+
+async function runBackup() {
+  toast('Backing up…');
+  try {
+    const res = await apiFetch(BASE + '/api/backup', { method: 'POST' });
+    const out = await res.json();
+    toast(out.ok ? 'Backup saved' : 'Backup failed');
+  } catch (e) { toast('Backup failed'); }
+}
+
 function renderPositions() {
   const sumEl = document.getElementById('portfolio-summary');
   const grid = document.getElementById('positions-grid');
@@ -584,20 +749,21 @@ function render() {
     <div class="rule"><strong>Options overlay:</strong> ${s.options_overlay || '—'}</div>
     <div class="rule"><strong>Near MA digest:</strong> ${s.near_ma_digest || 'Weekday 12 & 3 PM ET'}</div>
     <div class="rule"><strong>Weekly journal:</strong> ${s.weekly_journal || 'Friday 4:10 PM ET'}</div>
-    <div class="rule"><strong>Backup:</strong> ${s.backup || 'Daily /data snapshot'}</div>
+    <div class="rule"><strong>Backup:</strong> ${s.backup || 'Daily /data snapshot'}
+      <button class="btn" style="margin-left:8px;vertical-align:middle" onclick="runBackup()">Run now</button></div>
     <div class="rule"><strong>Data:</strong> ${s.data_source} — scans every 30 min + 4:05 PM ET</div>
     <div class="rule"><strong>Sector ETFs:</strong> Watch-only — alerts, no trades</div>
     <div class="rule"><strong>Size:</strong> ${s.sizing || (data.risk_pct + '% equity')}</div>
     <div class="rule"><strong>Stop:</strong> ${s.exit}</div>
     <div class="rule"><strong>Take profit:</strong> ${s.take_profit}</div>
     <div class="rule"><strong>MA levels:</strong> ${s.levels.join(' · ')}</div>
-    <div class="rule"><strong>Backtest:</strong> POST /api/backtest?pool=main&amp;days=90 (API key if set)</div>`;
+    <div class="rule"><strong>Backtest:</strong> Use the <em>Test</em> tab or POST /api/backtest?pool=main&amp;days=90</div>`;
 
   if (s.discord_roles) {
     document.getElementById('discord-roles').innerHTML = `
-      <div class="rule">Set role IDs in Railway env vars to ping on entries, stops, take-profits, proximity, daily summary, and Sunday premarket.</div>
+      <div class="rule">Set role IDs in Railway env vars to ping on entries, stops, take-profits, proximity, daily summary, Sunday premarket, weekly journal, and options overlay.</div>
       <div class="rule"><code style="color:var(--green)">DISCORD_ROLE_ENTRIES</code> · <code style="color:var(--green)">DISCORD_ROLE_STOPS</code> · <code style="color:var(--green)">DISCORD_ROLE_TAKEPROFIT</code></div>
-      <div class="rule"><code style="color:var(--green)">DISCORD_ROLE_PROXIMITY</code> · <code style="color:var(--green)">DISCORD_ROLE_DAILY</code></div>`;
+      <div class="rule"><code style="color:var(--green)">DISCORD_ROLE_PROXIMITY</code> · <code style="color:var(--green)">DISCORD_ROLE_DAILY</code> · <code style="color:var(--green)">DISCORD_ROLE_WEEKLY</code> · <code style="color:var(--green)">DISCORD_ROLE_OPTIONS</code></div>`;
   }
 
   const log = (data.state && data.state.log) ? data.state.log : (poolState.log || []);
