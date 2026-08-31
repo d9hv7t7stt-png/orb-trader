@@ -5,9 +5,13 @@ var state = require("./state");
 var discord = require("./discord");
 var pools = require("./pools");
 var marketHours = require("./marketHours");
+var alpha = require("./alpha");
+var themes = require("./themes");
+var vixMod = require("./vix");
 
 var ALERT_COOLDOWN_MS = parseInt(process.env.ALERT_COOLDOWN_MIN || "60", 10) * 60 * 1000;
 var scanning = false;
+var lastScanContext = null;
 
 function canAlert(poolId, ticker, maKey) {
   var key = ticker + ":" + maKey;
@@ -147,7 +151,19 @@ function processTakeProfits(poolId, results) {
   return tpExits;
 }
 
-function processTicker(poolId, data, livePrices) {
+function buildTickerContext(poolId, data, scanCtx) {
+  var rsInfo = scanCtx.rsRanks[poolId] && scanCtx.rsRanks[poolId].byTicker
+    ? scanCtx.rsRanks[poolId].byTicker[data.ticker]
+    : null;
+  return {
+    regimeBullish: scanCtx.regimeBullish,
+    vix: scanCtx.vix,
+    rsInfo: rsInfo,
+    themeOk: themes.canAddThemePosition(poolId, data.ticker)
+  };
+}
+
+function processTicker(poolId, data, livePrices, scanCtx) {
   if (data.error || !data.price) return { alerts: 0, entries: 0 };
 
   var ticker = data.ticker;
@@ -159,6 +175,11 @@ function processTicker(poolId, data, livePrices) {
   var belowStop = isBelowStopMA(data);
   var earningsBlocked = isEarningsBlackout(data);
   var optionsChecked = false;
+  var tickerCtx = buildTickerContext(poolId, data, scanCtx);
+  var setup = alpha.computeSetupScore(data, tickerCtx);
+
+  data.setupScore = setup.score;
+  data.setupParts = setup.parts;
 
   data.levels.forEach(function (level) {
     if (!level.near || level.value == null) return;
@@ -167,8 +188,8 @@ function processTicker(poolId, data, livePrices) {
       if (canAlert(poolId, ticker, level.key)) {
         markAlert(poolId, ticker, level.key);
         alerts++;
-        state.logEvent("MA_NEAR", ticker + " within " + level.proximity_pct + "% of " + level.label + " ($" + level.value + ")", poolId);
-        discord.postProximityAlert(poolId, ticker, data.price, level).catch(function () {});
+        state.logEvent("MA_NEAR", ticker + " score " + setup.score + " · within " + level.proximity_pct + "% of " + level.label, poolId);
+        discord.postProximityAlert(poolId, ticker, data.price, level, setup).catch(function () {});
       }
     }
 
@@ -183,17 +204,26 @@ function processTicker(poolId, data, livePrices) {
     if (belowStop) return;
     if (!isAboveStopMA(data)) return;
     if (earningsBlocked) return;
+    if (!scanCtx.regimeBullish) return;
+    if (scanCtx.vix && scanCtx.vix.blockEntries) return;
+    if (!alpha.passesRsGate(tickerCtx.rsInfo)) return;
+    if (!themes.canAddThemePosition(poolId, ticker)) return;
+    if (!scanCtx.entryWindowOpen) return;
+    if (!setup.tradeable) return;
+
     if (!paper.hasPosition(poolId, ticker, level.key)) {
-      var riskUsd = paper.getPositionSizeUSD(poolId, livePrices);
+      var riskMult = scanCtx.vix ? scanCtx.vix.riskMult : 1;
+      var riskUsd = paper.getPositionSizeUSD(poolId, livePrices, riskMult);
       var shares = Math.floor(riskUsd / data.price);
-      var reason = "21D proximity · above 55D";
+      var reason = "21D proximity · above 55D · score " + setup.score;
       if (data.earningsDate) reason += " · earnings " + data.earningsDate;
+      if (scanCtx.vix && scanCtx.vix.vix != null) reason += " · VIX " + scanCtx.vix.vix;
       var trade = paper.buy(poolId, ticker, level.key, level.label, data.price, shares, reason, riskUsd);
       if (trade) {
         entries++;
         alreadyInTicker = true;
-        state.logEvent("STOCK_BUY", ticker + " " + shares + "sh @ $" + data.price + " (" + level.label + ", " + riskUsd + " risk)", poolId);
-        discord.postStockEntry(poolId, ticker, level.label, data.price, shares, trade.total, level.proximity_pct, riskUsd).catch(function () {});
+        state.logEvent("STOCK_BUY", ticker + " " + shares + "sh @ $" + data.price + " (score " + setup.score + ", " + riskUsd + " risk)", poolId);
+        discord.postStockEntry(poolId, ticker, level.label, data.price, shares, trade.total, level.proximity_pct, riskUsd, setup).catch(function () {});
       }
     }
   });
@@ -207,14 +237,22 @@ function collectNearHits(poolId, list, results) {
     var data = results[t];
     if (!data || !data.levels) return;
     data.levels.filter(function (l) { return l.near; }).forEach(function (l) {
-      nearHits.push({ poolId: poolId, ticker: t, level: l.label, proximity: l.proximity_pct, price: data.price });
+      nearHits.push({
+        poolId: poolId,
+        ticker: t,
+        level: l.label,
+        proximity: l.proximity_pct,
+        price: data.price,
+        setupScore: data.setupScore
+      });
     });
   });
   return nearHits;
 }
 
-function runPoolScan(poolId, allResults, marketOpen, opts) {
+function runPoolScan(poolId, allResults, marketOpen, opts, scanCtx) {
   opts = opts || {};
+  scanCtx = scanCtx || {};
   var pool = pools.getPool(poolId);
   var list = pool.getTickers().filter(function (t) { return state.isTickerEnabled(poolId, t); });
   state.logEvent("SCAN", (opts.quotesOnly ? "Quotes-only scan " : "Scanning ") + list.length + " tickers…", poolId);
@@ -236,7 +274,9 @@ function runPoolScan(poolId, allResults, marketOpen, opts) {
   var totalEntries = 0;
   var nearHits = collectNearHits(poolId, list, results);
 
-  if (!opts.quotesOnly) {
+  var processTrades = marketHours.canProcessTradeLogic(marketOpen, opts);
+
+  if (processTrades) {
     flattenAlertOnlyPositions(poolId, results);
     totalExits = processStopLosses(poolId, results);
     totalTakeProfits = processTakeProfits(poolId, results);
@@ -245,7 +285,7 @@ function runPoolScan(poolId, allResults, marketOpen, opts) {
       var t = list[i];
       var data = results[t];
       if (!data) continue;
-      var out = processTicker(poolId, data, livePrices);
+      var out = processTicker(poolId, data, livePrices, scanCtx);
       totalAlerts += out.alerts;
       totalEntries += out.entries;
     }
@@ -266,6 +306,29 @@ function runPoolScan(poolId, allResults, marketOpen, opts) {
     equity: equity,
     unrealized: paper.getUnrealizedPnL(poolId, livePrices).total
   };
+}
+
+async function buildScanContext(allResults, marketOpen) {
+  var spyChart = await indicators.yahooChart("SPY", "1d", "3mo");
+  alpha.enrichRelativeStrength(allResults, spyChart && spyChart.bars);
+
+  var vix = await vixMod.fetchVix();
+  var regimeBullish = alpha.isRegimeBullish(allResults);
+  var rsRanks = {};
+
+  pools.getAllPools().forEach(function (pool) {
+    rsRanks[pool.id] = alpha.buildRsRanks(allResults, pool.getTickers());
+  });
+
+  var ctx = {
+    vix: vix,
+    regimeBullish: regimeBullish,
+    rsRanks: rsRanks,
+    entryWindowOpen: !marketOpen || marketHours.isEntryWindowOpen()
+  };
+
+  lastScanContext = ctx;
+  return ctx;
 }
 
 async function runScan(force, opts) {
@@ -293,15 +356,19 @@ async function runScan(force, opts) {
       marketOpen
     );
 
+    var scanCtx = await buildScanContext(allResults, marketOpen);
+
     var poolResults = await Promise.all(
       pools.getAllPools().map(function (pool) {
-        return Promise.resolve(runPoolScan(pool.id, allResults, marketOpen, opts));
+        return Promise.resolve(runPoolScan(pool.id, allResults, marketOpen, opts, scanCtx));
       })
     );
 
     return {
       ok: true,
       duration_ms: Date.now() - start,
+      regime: scanCtx.regimeBullish,
+      vix: scanCtx.vix,
       pools: poolResults
     };
   } catch (e) {
@@ -313,7 +380,7 @@ async function runScan(force, opts) {
 }
 
 function startupScanForced() {
-  return marketHours.isMarketHours();
+  return false;
 }
 
 function flattenAllAlertOnlyPositions() {
@@ -335,14 +402,17 @@ function scheduleScanner() {
   }
 
   setTimeout(function () {
-    var force = startupScanForced();
-    runScan(force).then(function (result) {
-      if (!force && result && result.skipped) {
+    runScan(false).then(function (result) {
+      if (result && result.skipped) {
         state.logEvent("SCAN", "Startup scan skipped — outside market hours");
       }
       setTimeout(tick, intervalMin * 60 * 1000);
     });
   }, 5000);
+}
+
+function getLastScanContext() {
+  return lastScanContext;
 }
 
 module.exports = {
@@ -354,5 +424,7 @@ module.exports = {
   isEarningsBlackout: isEarningsBlackout,
   processStopLosses: processStopLosses,
   processTakeProfits: processTakeProfits,
-  flattenAllAlertOnlyPositions: flattenAllAlertOnlyPositions
+  flattenAllAlertOnlyPositions: flattenAllAlertOnlyPositions,
+  getLastScanContext: getLastScanContext,
+  buildScanContext: buildScanContext
 };

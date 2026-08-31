@@ -95,11 +95,12 @@ function hasAnyPosition(poolId, ticker) {
   });
 }
 
-function getPositionSizeUSD(poolId, livePrices) {
+function getPositionSizeUSD(poolId, livePrices, riskMult) {
   var equity = getEquity(poolId, livePrices);
-  var size = equity * tickers.RISK_PCT;
+  var mult = riskMult != null && !isNaN(riskMult) ? riskMult : 1;
+  var size = equity * tickers.RISK_PCT * mult;
   if (tickers.TRADE_SIZE > 0) {
-    size = Math.min(size, tickers.TRADE_SIZE);
+    size = Math.min(size, tickers.TRADE_SIZE * mult);
   }
   return Math.max(100, Math.floor(size));
 }
